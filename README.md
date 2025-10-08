@@ -333,9 +333,8 @@ Este proyecto está licenciado bajo MIT License - ver archivo [LICENSE](LICENSE)
 
 **Martín Pratto**
 
-- GitHub: [@tu-usuario](https://github.com/tu-usuario)
-- LinkedIn: [Tu perfil](https://linkedin.com/in/tu-perfil)
-- Email: tu.email@ejemplo.com
+- GitHub: [@hmpch](https://github.com/hmpch)
+- Email: prattoabogados@gmail.com
 
 ---
 

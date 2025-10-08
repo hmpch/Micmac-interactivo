@@ -693,55 +693,221 @@ with tab4:
 # ============================================================
 # TAB 5: GRÁFICOS ADICIONALES
 # ============================================================
+
+# ============================================================
+# TAB 5: GRÁFICOS ADICIONALES (VERSIÓN MEJORADA)
+# ============================================================
 with tab5:
     st.markdown("### 📊 Gráficos Complementarios")
     
-    # Gráfico de barras de motricidad
-    st.markdown("#### 📊 Motricidad Total por Variable (Top 20)")
-    fig_bar, ax_bar = plt.subplots(figsize=(14, 6))
-    top_20_idx = order[:20]
-    top_20_vars = [nombres[i] for i in top_20_idx]
-    top_20_mot = mot_tot[top_20_idx]
+    # ========== GRÁFICO 1: TOP 15 BARRAS HORIZONTALES ==========
+    st.markdown("#### 📊 Top 15 Variables por Motricidad Total")
     
-    colors_bar = ['#CC0000' if df_all.loc[var, 'Clasificación'] == 'Crítico/inestable' else '#3388BB' for var in top_20_vars]
+    fig_bar_h, ax_bar_h = plt.subplots(figsize=(14, 8))
     
-    ax_bar.barh(range(20), top_20_mot, color=colors_bar, edgecolor='black', linewidth=0.5)
-    ax_bar.set_yticks(range(20))
-    ax_bar.set_yticklabels(top_20_vars)
-    ax_bar.invert_yaxis()
-    ax_bar.set_xlabel("Motricidad Total", fontweight='bold')
-    ax_bar.set_title(f"Top 20 Variables por Motricidad (α={alpha}, K={K_max})", fontweight='bold')
-    ax_bar.grid(axis='x', alpha=0.3)
+    top_15_idx = order[:15]
+    top_15_vars = [nombres[i] for i in top_15_idx]
+    top_15_mot = mot_tot[top_15_idx]
     
-    st.pyplot(fig_bar)
+    # Colores según clasificación
+    colors_bar = []
+    for var in top_15_vars:
+        clasificacion = df_all.loc[var, 'Clasificación']
+        if clasificacion == 'Crítico/inestable':
+            colors_bar.append('#1166CC')
+        elif clasificacion == 'Determinantes':
+            colors_bar.append('#FF4444')
+        elif clasificacion == 'Variables resultado':
+            colors_bar.append('#66BBFF')
+        else:
+            colors_bar.append('#FF9944')
     
-    # Heatmap de motricidad vs dependencia
-    st.markdown("#### 🔥 Heatmap: Motricidad vs Dependencia")
-    fig_heat, ax_heat = plt.subplots(figsize=(12, 8))
+    # Gráfico horizontal (invertido para que el más alto esté arriba)
+    y_pos = np.arange(len(top_15_vars))
+    ax_bar_h.barh(y_pos, top_15_mot, color=colors_bar, edgecolor='black', linewidth=0.5)
+    ax_bar_h.set_yticks(y_pos)
+    ax_bar_h.set_yticklabels(top_15_vars, fontsize=10)
+    ax_bar_h.invert_yaxis()  # El primero arriba
+    ax_bar_h.set_xlabel("Motricidad Total", fontweight='bold', fontsize=12)
+    ax_bar_h.set_title(f"Top 15 Variables por Motricidad Total (α={alpha}, K={K_max})", 
+                      fontweight='bold', fontsize=14)
+    ax_bar_h.grid(axis='x', alpha=0.3)
     
-    df_heat = df_all[['Motricidad_directa', 'Motricidad_indirecta', 'Motricidad_total', 
-                      'Dependencia_directa', 'Dependencia_indirecta', 'Dependencia_total']].head(20)
+    # Agregar valores al final de cada barra
+    for i, (var, val) in enumerate(zip(top_15_vars, top_15_mot)):
+        ax_bar_h.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
     
-    sns.heatmap(df_heat.T, annot=True, fmt=".0f", cmap='YlOrRd', linewidths=0.5, 
-                cbar_kws={'label': 'Valor'}, ax=ax_heat)
-    ax_heat.set_title("Heatmap de Influencias (Top 20 variables)", fontweight='bold')
-    ax_heat.set_xlabel("Variables", fontweight='bold')
-    ax_heat.set_ylabel("Métricas", fontweight='bold')
+    st.pyplot(fig_bar_h)
+    
+    # Botón descarga
+    img_bar_h = io.BytesIO()
+    fig_bar_h.savefig(img_bar_h, format='png', dpi=300, bbox_inches='tight')
+    img_bar_h.seek(0)
+    st.download_button(
+        label="📥 Descargar Top 15 Barras (PNG)",
+        data=img_bar_h,
+        file_name=f"micmac_top15_barras_a{alpha}_k{K_max}.png",
+        mime="image/png"
+    )
+    
+    st.markdown("---")
+    
+    # ========== GRÁFICO 2: SCATTER MOTRICIDAD VS RANKING (MEJORADO) ==========
+    st.markdown("#### 📈 Motricidad Total vs Ranking")
+    st.caption("Vista completa de todas las variables ordenadas por influencia")
+    
+    fig_scatter, ax_scatter = plt.subplots(figsize=(16, 8))
+    
+    x_pos = np.arange(1, len(nombres) + 1)
+    
+    # Colores por clasificación
+    colors_scatter = []
+    for idx in order:
+        clasificacion = df_all.loc[nombres[idx], 'Clasificación']
+        if clasificacion == 'Crítico/inestable':
+            colors_scatter.append('#1166CC')
+        elif clasificacion == 'Determinantes':
+            colors_scatter.append('#FF4444')
+        elif clasificacion == 'Variables resultado':
+            colors_scatter.append('#66BBFF')
+        else:
+            colors_scatter.append('#FF9944')
+    
+    # Scatter plot
+    ax_scatter.scatter(x_pos, mot_tot[order], c=colors_scatter, s=80, alpha=0.7, 
+                      edgecolors='black', linewidth=0.5)
+    
+    # Etiquetas solo para top 20
+    for i in range(min(20, len(nombres))):
+        idx = order[i]
+        ax_scatter.text(i + 1, mot_tot[idx], nombres[idx][:20], 
+                       rotation=90, fontsize=7, ha='center', va='bottom')
+    
+    ax_scatter.set_xlabel("Ranking de Variable", fontweight='bold', fontsize=12)
+    ax_scatter.set_ylabel("Motricidad Total", fontweight='bold', fontsize=12)
+    ax_scatter.set_title(f"Motricidad Total vs Ranking (α={alpha}, K={K_max})", 
+                        fontweight='bold', fontsize=14)
+    ax_scatter.grid(True, alpha=0.3)
+    
+    # Leyenda
+    from matplotlib.lines import Line2D
+    legend_scatter = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF4444', markersize=8, label='Determinantes'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#1166CC', markersize=8, label='Crítico/inestable'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#66BBFF', markersize=8, label='Variables resultado'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF9944', markersize=8, label='Autónomas')
+    ]
+    ax_scatter.legend(handles=legend_scatter, loc='upper right', fontsize=10)
+    
+    st.pyplot(fig_scatter)
+    
+    # Botón descarga
+    img_scatter = io.BytesIO()
+    fig_scatter.savefig(img_scatter, format='png', dpi=300, bbox_inches='tight')
+    img_scatter.seek(0)
+    st.download_button(
+        label="📥 Descargar Scatter Ranking (PNG)",
+        data=img_scatter,
+        file_name=f"micmac_scatter_ranking_a{alpha}_k{K_max}.png",
+        mime="image/png"
+    )
+    
+    st.markdown("---")
+    
+    # ========== GRÁFICO 3: HEATMAP CORREGIDO ==========
+    st.markdown("#### 🔥 Heatmap: Motricidad vs Dependencia (Top 20 variables)")
+    st.caption("Vista consolidada de influencias directas, indirectas y totales")
+    
+    # Seleccionar top 20 por motricidad total
+    top_20_for_heat = order[:20]
+    df_heat = df_all.loc[[nombres[i] for i in top_20_for_heat], 
+                         ['Motricidad_directa', 'Motricidad_indirecta', 'Motricidad_total',
+                          'Dependencia_directa', 'Dependencia_indirecta', 'Dependencia_total']]
+    
+    # Transponer para que variables estén en columnas
+    df_heat_T = df_heat.T
+    
+    fig_heat, ax_heat = plt.subplots(figsize=(18, 6))
+    
+    # Heatmap SIN anotaciones (para evitar superposición)
+    sns.heatmap(df_heat_T, annot=False, fmt=".0f", cmap='YlOrRd', 
+                linewidths=0.5, cbar_kws={'label': 'Valor'}, ax=ax_heat)
+    
+    ax_heat.set_title("Heatmap de Influencias (Top 20 variables)", fontweight='bold', fontsize=14)
+    ax_heat.set_xlabel("Variables", fontweight='bold', fontsize=12)
+    ax_heat.set_ylabel("Métricas", fontweight='bold', fontsize=12)
+    ax_heat.set_xticklabels(ax_heat.get_xticklabels(), rotation=45, ha='right', fontsize=8)
+    ax_heat.set_yticklabels(ax_heat.get_yticklabels(), rotation=0, fontsize=10)
     
     st.pyplot(fig_heat)
     
-    # Distribución de clasificaciones
+    # Botón descarga
+    img_heat = io.BytesIO()
+    fig_heat.savefig(img_heat, format='png', dpi=300, bbox_inches='tight')
+    img_heat.seek(0)
+    st.download_button(
+        label="📥 Descargar Heatmap (PNG)",
+        data=img_heat,
+        file_name=f"micmac_heatmap_a{alpha}_k{K_max}.png",
+        mime="image/png"
+    )
+    
+    st.markdown("---")
+    
+    # ========== GRÁFICO 4: DISTRIBUCIÓN POR CUADRANTE ==========
     st.markdown("#### 📈 Distribución de Variables por Cuadrante")
-    fig_pie, ax_pie = plt.subplots(figsize=(10, 6))
+    
+    fig_pie, ax_pie = plt.subplots(figsize=(10, 7))
     
     counts = df_all['Clasificación'].value_counts()
-    colors_pie = ['#FF4444', '#1166CC', '#66BBFF', '#FF9944']
+    colors_pie = {
+        'Determinantes': '#FF4444',
+        'Crítico/inestable': '#1166CC',
+        'Variables resultado': '#66BBFF',
+        'Autónomas': '#FF9944'
+    }
     
-    ax_pie.pie(counts, labels=counts.index, autopct='%1.1f%%', colors=colors_pie, 
-               startangle=90, textprops={'fontsize': 12, 'fontweight': 'bold'})
-    ax_pie.set_title("Distribución de Variables por Clasificación MICMAC", fontweight='bold', fontsize=14)
+    # Asegurar orden consistente
+    ordered_labels = ['Crítico/inestable', 'Determinantes', 'Variables resultado', 'Autónomas']
+    ordered_counts = [counts.get(label, 0) for label in ordered_labels]
+    ordered_colors = [colors_pie[label] for label in ordered_labels]
+    
+    wedges, texts, autotexts = ax_pie.pie(
+        ordered_counts, 
+        labels=ordered_labels, 
+        autopct='%1.1f%%',
+        colors=ordered_colors,
+        startangle=90,
+        textprops={'fontsize': 12, 'fontweight': 'bold'}
+    )
+    
+    # Mejorar contraste de porcentajes
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontsize(11)
+    
+    ax_pie.set_title("Distribución de Variables por Clasificación MICMAC", 
+                    fontweight='bold', fontsize=14)
     
     st.pyplot(fig_pie)
+    
+    # Tabla de resumen
+    st.markdown("#### 📊 Resumen Cuantitativo")
+    
+    summary_data = {
+        'Clasificación': ordered_labels,
+        'Cantidad': ordered_counts,
+        'Porcentaje': [f"{(count/len(nombres)*100):.1f}%" for count in ordered_counts],
+        'Interpretación': [
+            'Variables clave de alto impacto (monitorear)',
+            'Palancas de control directo (actuar)',
+            'Indicadores de resultado (medir)',
+            'Variables independientes (gestión rutinaria)'
+        ]
+    }
+    
+    df_summary = pd.DataFrame(summary_data)
+    st.dataframe(df_summary, use_container_width=True)
 
 # ============================================================
 # TAB 6: INFORME EJECUTIVO

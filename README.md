@@ -7,7 +7,7 @@
 
 **Implementación open-source del método MICMAC (Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación)**
 
-Una herramienta interactiva para análisis estructural de sistemas complejos basada en la metodología de **Michel Godet (1990)**. Validada con >98% de concordancia respecto al software MICMAC oficial propietario.
+Una herramienta interactiva para análisis estructural de sistemas complejos basada en la metodología de **Michel Godet (1990)**. 
 
 ---
 

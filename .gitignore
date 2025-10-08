@@ -1,0 +1,78 @@
+# .gitignore para proyecto MICMAC Interactivo
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos virtuales
+venv/
+ENV/
+env/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Archivos de datos sensibles (descomenta si es necesario)
+# *.xlsx
+# *.csv
+# data/
+
+# Archivos temporales
+*.tmp
+*.bak
+*.swp
+*~
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de log
+*.log
+
+# Archivos de caché
+.cache/
+.pytest_cache/
+
+# Archivos de cobertura de tests
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Archivos de documentación generada
+docs/_build/
+site/
+
+# Archivos de resultados (opcional)
+resultados/
+informes_generados/
+graficos_descargados/

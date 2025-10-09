@@ -111,7 +111,7 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
             except:
                 pass
     
-    if valores_problematicos and len(valores_problematicos) < 100:  # Solo mostrar si no son demasiados
+    if valores_problematicos and len(valores_problematicos) < 100:
         st.warning(f"⚠️ Se detectaron {len(valores_problematicos)} celdas con valores no numéricos que se convertirán a CERO:")
         with st.expander("Ver detalles de valores convertidos"):
             for vp in valores_problematicos[:50]:
@@ -174,6 +174,7 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
+
 def micmac_total(M: np.ndarray, alpha: float, K: int) -> np.ndarray:
     """
     Calcula la matriz total MICMAC: M_total = M + α·M² + α²·M³ + ... + α^(K-1)·M^K
@@ -193,10 +194,9 @@ def micmac_total(M: np.ndarray, alpha: float, K: int) -> np.ndarray:
     M_power = M.copy()
     
     for k in range(2, K + 1):
-        M_power = M_power @ M  # Multiplicación matricial: M^k
+        M_power = M_power @ M
         M_total += (alpha ** (k - 1)) * M_power
     
-    # Forzar diagonal a 0
     np.fill_diagonal(M_total, 0.0)
     return M_total
 
@@ -204,9 +204,6 @@ def micmac_total(M: np.ndarray, alpha: float, K: int) -> np.ndarray:
 def first_stable_K(M: np.ndarray, alpha: float, K_values=range(2, 15)) -> int:
     """
     Encuentra el primer valor de K donde el ranking por motricidad se estabiliza.
-    
-    Retorna el valor de K donde el orden de las variables no cambia respecto 
-    de la iteración anterior, indicando convergencia del algoritmo.
     """
     prev_order = None
     for K in K_values:
@@ -222,8 +219,6 @@ def first_stable_K(M: np.ndarray, alpha: float, K_values=range(2, 15)) -> int:
 def analyze_stability(M: np.ndarray, alpha_values, K_values):
     """
     Analiza la estabilidad del ranking bajo diferentes combinaciones de α y K.
-    
-    Retorna un DataFrame con los top-5 rankings para cada combinación de parámetros.
     """
     results = []
     for alpha in alpha_values:
@@ -247,12 +242,6 @@ def analyze_stability(M: np.ndarray, alpha_values, K_values):
 def classify_quadrant(motricidad, dependencia, mot_threshold, dep_threshold):
     """
     Clasifica una variable según el plano de influencia/dependencia MICMAC.
-    
-    Cuadrantes (Godet, 1990):
-    - Zona 1 (Determinantes): Alta motricidad, baja dependencia → Palancas de acción
-    - Zona 2 (Crítico/Relay): Alta motricidad, alta dependencia → Variables clave inestables
-    - Zona 3 (Resultado): Baja motricidad, alta dependencia → Indicadores de impacto
-    - Zona 4 (Autónomas): Baja motricidad, baja dependencia → Variables independientes
     """
     if motricidad >= mot_threshold and dependencia < dep_threshold:
         return 'Determinantes'
@@ -278,7 +267,6 @@ uploaded_file = st.file_uploader(
 if not uploaded_file:
     st.info("👆 Por favor, sube un archivo Excel para comenzar el análisis.")
     
-    # Mostrar ejemplo de formato esperado
     with st.expander("💡 Formato de archivo esperado"):
         st.markdown("""
         **Estructura del archivo Excel:**
@@ -297,143 +285,11 @@ if not uploaded_file:
         - La diagonal será automáticamente puesta a 0
         """)
     st.stop()
-# ============================================================
-# DIAGNÓSTICO: AGREGAR DESPUÉS DE CARGAR EL ARCHIVO
-# ============================================================
-
-with st.expander("🔍 DIAGNÓSTICO: Variables con Valores Cero", expanded=False):
-    st.markdown("### Análisis de Variables con Resultados Cero")
-    
-    # 1. Verificar matriz original
-    st.markdown("#### 1️⃣ Matriz Original (Directa)")
-    
-    # Variables con fila completa en ceros (sin motricidad directa)
-    vars_sin_motricidad = []
-    for i, var in enumerate(nombres):
-        if M[i, :].sum() == 0:
-            vars_sin_motricidad.append(var)
-    
-    if vars_sin_motricidad:
-        st.warning(f"⚠️ **{len(vars_sin_motricidad)} variables con motricidad directa = 0** (fila en ceros):")
-        for var in vars_sin_motricidad:
-            st.write(f"- **{var}**: No influye directamente sobre ninguna otra variable")
-        st.info("💡 **Causa:** Estas variables tienen su fila completa en ceros en la matriz de entrada.")
-    else:
-        st.success("✅ Todas las variables tienen motricidad directa > 0")
-    
-    # Variables con columna completa en ceros (sin dependencia directa)
-    vars_sin_dependencia = []
-    for j, var in enumerate(nombres):
-        if M[:, j].sum() == 0:
-            vars_sin_dependencia.append(var)
-    
-    if vars_sin_dependencia:
-        st.warning(f"⚠️ **{len(vars_sin_dependencia)} variables con dependencia directa = 0** (columna en ceros):")
-        for var in vars_sin_dependencia:
-            st.write(f"- **{var}**: No recibe influencia directa de ninguna otra variable")
-        st.info("💡 **Causa:** Estas variables tienen su columna completa en ceros en la matriz de entrada.")
-    else:
-        st.success("✅ Todas las variables tienen dependencia directa > 0")
-    
-    st.markdown("---")
-    
-    # 2. Verificar datos del archivo original
-    st.markdown("#### 2️⃣ Verificación de Datos de Entrada")
-    
-    uploaded_file.seek(0)
-    df_raw_check = pd.read_excel(uploaded_file, sheet_name=sheet, index_col=0)
-    
-    # Verificar valores no numéricos
-    valores_no_numericos = []
-    for col in df_raw_check.columns:
-        if col not in ['SUMA', 'Suma']:
-            for idx in df_raw_check.index:
-                val = df_raw_check.loc[idx, col]
-                if pd.isna(val):
-                    valores_no_numericos.append(f"{idx} → {col}: NaN (vacío)")
-                elif not isinstance(val, (int, float)):
-                    valores_no_numericos.append(f"{idx} → {col}: '{val}' (no numérico)")
-    
-    if valores_no_numericos:
-        st.warning(f"⚠️ **{len(valores_no_numericos)} celdas con valores no numéricos detectados:**")
-        st.write("Estos valores se convirtieron automáticamente a **cero**:")
-        for val in valores_no_numericos[:20]:  # Mostrar primeros 20
-            st.write(f"- {val}")
-        if len(valores_no_numericos) > 20:
-            st.write(f"... y {len(valores_no_numericos) - 20} más")
-    else:
-        st.success("✅ Todos los valores son numéricos")
-    
-    st.markdown("---")
-    
-    # 3. Estadísticas de la matriz
-    st.markdown("#### 3️⃣ Estadísticas de la Matriz")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        total_celdas = M.size
-        celdas_cero = np.count_nonzero(M == 0)
-        st.metric("Celdas con valor 0", f"{celdas_cero}/{total_celdas}")
-        st.caption(f"{(celdas_cero/total_celdas*100):.1f}% de la matriz")
-    
-    with col2:
-        celdas_positivas = np.count_nonzero(M > 0)
-        st.metric("Celdas con valor > 0", f"{celdas_positivas}/{total_celdas}")
-        st.caption(f"{(celdas_positivas/total_celdas*100):.1f}% de la matriz")
-    
-    with col3:
-        valor_max = M.max()
-        valor_promedio = M[M > 0].mean() if celdas_positivas > 0 else 0
-        st.metric("Valor máximo", f"{valor_max:.1f}")
-        st.metric("Promedio (valores > 0)", f"{valor_promedio:.2f}")
-    
-    st.markdown("---")
-    
-    # 4. Heatmap de la matriz original
-    st.markdown("#### 4️⃣ Visualización de la Matriz Original")
-    st.caption("Heatmap para identificar visualmente filas/columnas en cero")
-    
-    fig_diag, ax_diag = plt.subplots(figsize=(16, 14))
-    
-    # Mostrar solo primeras 30 variables si hay muchas
-    max_vars_visual = min(30, len(nombres))
-    M_visual = M[:max_vars_visual, :max_vars_visual]
-    nombres_visual = nombres[:max_vars_visual]
-    
-    sns.heatmap(M_visual, 
-                xticklabels=nombres_visual,
-                yticklabels=nombres_visual,
-                cmap='YlOrRd',
-                annot=False,
-                cbar_kws={'label': 'Intensidad de Influencia'},
-                linewidths=0.5,
-                linecolor='gray',
-                ax=ax_diag)
-    
-    ax_diag.set_title(f"Matriz de Influencias Directas (Primeras {max_vars_visual} variables)", 
-                     fontweight='bold', fontsize=14)
-    ax_diag.set_xlabel("Variables (Dependencia)", fontweight='bold')
-    ax_diag.set_ylabel("Variables (Motricidad)", fontweight='bold')
-    
-    plt.setp(ax_diag.get_xticklabels(), rotation=90, ha='right', fontsize=8)
-    plt.setp(ax_diag.get_yticklabels(), rotation=0, fontsize=8)
-    
-    st.pyplot(fig_diag)
-    
-    st.info("""
-    **Cómo interpretar el heatmap:**
-    - **Filas completamente blancas/claras** → Variable sin motricidad (no influye a otras)
-    - **Columnas completamente blancas/claras** → Variable sin dependencia (no es influida)
-    - La diagonal debe ser blanca (variables no se influyen a sí mismas)
-    """)
-
 
 # ============================================================
 # PROCESAMIENTO DEL ARCHIVO
 # ============================================================
 try:
-    # Leer hojas disponibles
     wb = load_workbook(uploaded_file, data_only=True)
     sheets = wb.sheetnames
     
@@ -444,273 +300,233 @@ try:
         help="Si el archivo tiene múltiples hojas, selecciona la que contiene la matriz de influencias directas."
     )
     
-    # Leer la hoja seleccionada
     uploaded_file.seek(0)
     df_raw = pd.read_excel(uploaded_file, sheet_name=sheet, index_col=0)
     
-    # Limpiezas comunes
     if 'SUMA' in df_raw.columns:
         df_raw = df_raw.drop(columns=['SUMA'])
     if 'Suma' in df_raw.columns:
         df_raw = df_raw.drop(columns=['Suma'])
     
-    # Convertir a matriz cuadrada
     df = ensure_square_from_df(df_raw)
     nombres = df.index.tolist()
     M = df.values.astype(float)
     
     st.success(f"✅ Archivo cargado correctamente. Hoja: **{sheet}** • Variables: **{len(nombres)}**")
     
-    # ============================================================
-# DIAGNÓSTICO DETALLADO (DESPUÉS DE PROCESAR)
-# ============================================================
-
-with st.expander("🔍 DIAGNÓSTICO COMPLETO: Análisis de Matriz", expanded=False):
-    st.markdown("### 📊 Diagnóstico de Matriz de Influencias")
-    
-    # 1. Estadísticas generales
-    st.markdown("#### 1️⃣ Estadísticas Generales de la Matriz")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        total_celdas = M.size
-        celdas_cero = np.count_nonzero(M == 0)
-        st.metric("Total de celdas", total_celdas)
-        st.caption(f"{len(nombres)} × {len(nombres)}")
-    
-    with col2:
-        st.metric("Celdas = 0", celdas_cero)
-        st.caption(f"{(celdas_cero/total_celdas*100):.1f}%")
-    
-    with col3:
-        celdas_positivas = np.count_nonzero(M > 0)
-        st.metric("Celdas > 0", celdas_positivas)
-        st.caption(f"{(celdas_positivas/total_celdas*100):.1f}%")
-    
-    with col4:
-        valor_max = M.max()
-        valor_promedio = M[M > 0].mean() if celdas_positivas > 0 else 0
-        st.metric("Valor máximo", f"{valor_max:.1f}")
-        st.caption(f"Promedio: {valor_promedio:.2f}")
-    
-    st.markdown("---")
-    
-    # 2. Variables con motricidad = 0
-    st.markdown("#### 2️⃣ Variables con Motricidad Directa = 0")
-    
-    vars_sin_motricidad = []
-    for i, var in enumerate(nombres):
-        if M[i, :].sum() == 0:
-            vars_sin_motricidad.append(var)
-    
-    if vars_sin_motricidad:
-        st.error(f"🔴 **{len(vars_sin_motricidad)} variables SIN motricidad directa** (fila completa en ceros)")
-        
-        col_a, col_b = st.columns([2, 1])
-        with col_a:
-            st.write("**Variables afectadas:**")
-            for var in vars_sin_motricidad:
-                st.write(f"• {var}")
-        
-        with col_b:
-            st.info("""
-            **Significado:**
-            - Fila = 0
-            - No influye a otras
-            - Motricidad total = 0
-            - Siempre autónomas
-            """)
-    else:
-        st.success("✅ Todas las variables tienen motricidad directa > 0")
-    
-    st.markdown("---")
-    
-    # 3. Variables con dependencia = 0
-    st.markdown("#### 3️⃣ Variables con Dependencia Directa = 0")
-    
-    vars_sin_dependencia = []
-    for j, var in enumerate(nombres):
-        if M[:, j].sum() == 0:
-            vars_sin_dependencia.append(var)
-    
-    if vars_sin_dependencia:
-        st.error(f"🔴 **{len(vars_sin_dependencia)} variables SIN dependencia directa** (columna completa en ceros)")
-        
-        col_c, col_d = st.columns([2, 1])
-        with col_c:
-            st.write("**Variables afectadas:**")
-            for var in vars_sin_dependencia:
-                st.write(f"• {var}")
-        
-        with col_d:
-            st.info("""
-            **Significado:**
-            - Columna = 0
-            - No es influida
-            - Dependencia total = 0
-            - Posible determinante
-            """)
-    else:
-        st.success("✅ Todas las variables tienen dependencia directa > 0")
-    
-    st.markdown("---")
-    
-    # 4. Heatmap visual
-    st.markdown("#### 4️⃣ Visualización de la Matriz")
-    st.caption("Heatmap para identificar patrones y ceros")
-    
-    fig_diag, ax_diag = plt.subplots(figsize=(16, 14))
-    
-    max_vars_visual = min(40, len(nombres))
-    M_visual = M[:max_vars_visual, :max_vars_visual]
-    nombres_visual = [n[:25] for n in nombres[:max_vars_visual]]
-    
-    sns.heatmap(M_visual, 
-                xticklabels=nombres_visual,
-                yticklabels=nombres_visual,
-                cmap='RdYlGn_r',
-                annot=False,
-                cbar_kws={'label': 'Intensidad'},
-                linewidths=0.5,
-                linecolor='white',
-                vmin=0,
-                vmax=M.max(),
-                ax=ax_diag)
-    
-    ax_diag.set_title(f"Matriz de Influencias Directas (Primeras {max_vars_visual} variables)", 
-                     fontweight='bold', fontsize=14)
-    ax_diag.set_xlabel("Variables (Dependencia) →", fontweight='bold', fontsize=12)
-    ax_diag.set_ylabel("Variables (Motricidad) ↓", fontweight='bold', fontsize=12)
-    
-    plt.setp(ax_diag.get_xticklabels(), rotation=90, ha='right', fontsize=7)
-    plt.setp(ax_diag.get_yticklabels(), rotation=0, fontsize=7)
-    
-    plt.tight_layout()
-    st.pyplot(fig_diag)
-    
-    st.info("""
-    **Guía de interpretación:**
-    - 🟢 **Verde**: Valores altos de influencia
-    - 🟡 **Amarillo**: Valores medios
-    - 🔴 **Rojo/Blanco**: Valores bajos o cero
-    - **Filas verdes**: Variables con alta motricidad
-    - **Columnas verdes**: Variables con alta dependencia
-    - **Filas blancas/rojas**: Variables sin motricidad (problema)
-    - **Columnas blancas/rojas**: Variables sin dependencia
-    """)
-    
-    st.markdown("---")
-    
-    # 5. Distribución de valores
-    st.markdown("#### 5️⃣ Distribución de Valores de Influencia")
-    
-    fig_hist, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Histograma de todos los valores
-    valores_no_cero = M[M > 0].flatten()
-    if len(valores_no_cero) > 0:
-        ax1.hist(valores_no_cero, bins=20, color='steelblue', edgecolor='black', alpha=0.7)
-        ax1.set_xlabel('Valor de Influencia', fontweight='bold')
-        ax1.set_ylabel('Frecuencia', fontweight='bold')
-        ax1.set_title('Distribución de Valores > 0', fontweight='bold')
-        ax1.grid(True, alpha=0.3)
-        
-        # Estadísticas
-        ax1.axvline(np.mean(valores_no_cero), color='red', linestyle='--', 
-                   label=f'Media: {np.mean(valores_no_cero):.2f}', linewidth=2)
-        ax1.axvline(np.median(valores_no_cero), color='green', linestyle='--', 
-                   label=f'Mediana: {np.median(valores_no_cero):.2f}', linewidth=2)
-        ax1.legend()
-    else:
-        ax1.text(0.5, 0.5, 'Sin valores > 0', ha='center', va='center', 
-                transform=ax1.transAxes, fontsize=14)
-    
-    # Distribución de motricidad y dependencia
-    mot_directa = M.sum(axis=1)
-    dep_directa = M.sum(axis=0)
-    
-    ax2.scatter(dep_directa, mot_directa, alpha=0.6, s=80, c='steelblue', edgecolors='black')
-    ax2.set_xlabel('Dependencia Directa', fontweight='bold')
-    ax2.set_ylabel('Motricidad Directa', fontweight='bold')
-    ax2.set_title('Motricidad vs Dependencia (Directa)', fontweight='bold')
-    ax2.grid(True, alpha=0.3)
-    
-    # Marcar variables con cero
-    for i, var in enumerate(nombres):
-        if mot_directa[i] == 0 or dep_directa[i] == 0:
-            ax2.scatter(dep_directa[i], mot_directa[i], s=200, c='red', 
-                       marker='x', linewidths=3, label='Cero' if i == 0 else '')
-    
-    if vars_sin_motricidad or vars_sin_dependencia:
-        ax2.legend()
-    
-    plt.tight_layout()
-    st.pyplot(fig_hist)
-    
-    st.markdown("---")
-    
-    # 6. Resumen y recomendaciones
-    st.markdown("#### 6️⃣ Resumen y Recomendaciones")
-    
-    tiene_problemas = len(vars_sin_motricidad) > 0 or len(vars_sin_dependencia) > 0
-    
-    if tiene_problemas:
-        st.error("""
-        ### ⚠️ PROBLEMAS DETECTADOS
-        
-        Tu matriz tiene variables con valores en cero. Esto puede deberse a:
-        
-        **Causas comunes:**
-        1. **Matriz incompleta**: Variables sin relaciones definidas
-        2. **Errores de entrada**: Celdas vacías en el Excel original
-        3. **Diseño intencional**: Variables genuinamente aisladas del sistema
-        
-        **Consecuencias:**
-        - Variables con motricidad = 0 → Siempre clasificadas como "Autónomas"
-        - Variables con dependencia = 0 → Pueden ser "Determinantes" o "Autónomas"
-        - Estas variables no participan en la propagación de influencias indirectas
-        
-        **Soluciones recomendadas:**
-        """)
-        
-        col_sol1, col_sol2 = st.columns(2)
-        
-        with col_sol1:
-            st.info("""
-            **Opción 1: Revisar datos**
-            - Verificar Excel original
-            - Completar relaciones faltantes
-            - Asegurar que todas las variables participen del sistema
-            """)
-        
-        with col_sol2:
-            st.info("""
-            **Opción 2: Aceptar diseño**
-            - Si es intencional, mantener
-            - Documentar por qué estas variables están aisladas
-            - Considerar si deben estar en el análisis
-            """)
-    else:
-        st.success("""
-        ### ✅ MATRIZ COMPLETA Y VÁLIDA
-        
-        No se detectaron problemas estructurales. Todas las variables:
-        - Tienen motricidad directa > 0 (influyen sobre otras)
-        - Tienen dependencia directa > 0 (son influidas por otras)
-        - Participan activamente en la dinámica del sistema
-        """)
-  
-  
-  
-  # Mostrar vista previa de la matriz
     with st.expander("👁️ Vista previa de la matriz cargada"):
         st.dataframe(df.head(10), use_container_width=True)
         st.caption(f"Mostrando las primeras 10 de {len(nombres)} variables")
+    
+    # ============================================================
+    # DIAGNÓSTICO DETALLADO
+    # ============================================================
+    
+    with st.expander("🔍 DIAGNÓSTICO COMPLETO: Análisis de Matriz", expanded=False):
+        st.markdown("### 📊 Diagnóstico de Matriz de Influencias")
+        
+        st.markdown("#### 1️⃣ Estadísticas Generales de la Matriz")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            total_celdas = M.size
+            celdas_cero = np.count_nonzero(M == 0)
+            st.metric("Total de celdas", total_celdas)
+            st.caption(f"{len(nombres)} × {len(nombres)}")
+        
+        with col2:
+            st.metric("Celdas = 0", celdas_cero)
+            st.caption(f"{(celdas_cero/total_celdas*100):.1f}%")
+        
+        with col3:
+            celdas_positivas = np.count_nonzero(M > 0)
+            st.metric("Celdas > 0", celdas_positivas)
+            st.caption(f"{(celdas_positivas/total_celdas*100):.1f}%")
+        
+        with col4:
+            valor_max = M.max()
+            valor_promedio = M[M > 0].mean() if celdas_positivas > 0 else 0
+            st.metric("Valor máximo", f"{valor_max:.1f}")
+            st.caption(f"Promedio: {valor_promedio:.2f}")
+        
+        st.markdown("---")
+        
+        st.markdown("#### 2️⃣ Variables con Motricidad Directa = 0")
+        
+        vars_sin_motricidad = []
+        for i, var in enumerate(nombres):
+            if M[i, :].sum() == 0:
+                vars_sin_motricidad.append(var)
+        
+        if vars_sin_motricidad:
+            st.error(f"🔴 **{len(vars_sin_motricidad)} variables SIN motricidad directa**")
+            
+            col_a, col_b = st.columns([2, 1])
+            with col_a:
+                st.write("**Variables afectadas:**")
+                for var in vars_sin_motricidad:
+                    st.write(f"• {var}")
+            
+            with col_b:
+                st.info("""
+                **Significado:**
+                - Fila = 0
+                - No influye a otras
+                - Motricidad total = 0
+                - Siempre autónomas
+                """)
+        else:
+            st.success("✅ Todas las variables tienen motricidad directa > 0")
+        
+        st.markdown("---")
+        
+        st.markdown("#### 3️⃣ Variables con Dependencia Directa = 0")
+        
+        vars_sin_dependencia = []
+        for j, var in enumerate(nombres):
+            if M[:, j].sum() == 0:
+                vars_sin_dependencia.append(var)
+        
+        if vars_sin_dependencia:
+            st.error(f"🔴 **{len(vars_sin_dependencia)} variables SIN dependencia directa**")
+            
+            col_c, col_d = st.columns([2, 1])
+            with col_c:
+                st.write("**Variables afectadas:**")
+                for var in vars_sin_dependencia:
+                    st.write(f"• {var}")
+            
+            with col_d:
+                st.info("""
+                **Significado:**
+                - Columna = 0
+                - No es influida
+                - Dependencia total = 0
+                """)
+        else:
+            st.success("✅ Todas las variables tienen dependencia directa > 0")
+        
+        st.markdown("---")
+        
+        st.markdown("#### 4️⃣ Visualización de la Matriz")
+        
+        fig_diag, ax_diag = plt.subplots(figsize=(16, 14))
+        
+        max_vars_visual = min(40, len(nombres))
+        M_visual = M[:max_vars_visual, :max_vars_visual]
+        nombres_visual = [n[:25] for n in nombres[:max_vars_visual]]
+        
+        sns.heatmap(M_visual, 
+                    xticklabels=nombres_visual,
+                    yticklabels=nombres_visual,
+                    cmap='RdYlGn_r',
+                    annot=False,
+                    cbar_kws={'label': 'Intensidad'},
+                    linewidths=0.5,
+                    linecolor='white',
+                    vmin=0,
+                    vmax=M.max(),
+                    ax=ax_diag)
+        
+        ax_diag.set_title(f"Matriz de Influencias Directas (Primeras {max_vars_visual} variables)", 
+                         fontweight='bold', fontsize=14)
+        ax_diag.set_xlabel("Variables (Dependencia) →", fontweight='bold', fontsize=12)
+        ax_diag.set_ylabel("Variables (Motricidad) ↓", fontweight='bold', fontsize=12)
+        
+        plt.setp(ax_diag.get_xticklabels(), rotation=90, ha='right', fontsize=7)
+        plt.setp(ax_diag.get_yticklabels(), rotation=0, fontsize=7)
+        
+        plt.tight_layout()
+        st.pyplot(fig_diag)
+        
+        st.info("""
+        **Guía:**
+        - 🟢 Verde: Valores altos
+        - 🔴 Rojo/Blanco: Ceros
+        - Filas blancas: Sin motricidad
+        - Columnas blancas: Sin dependencia
+        """)
+        
+        st.markdown("---")
+        
+        st.markdown("#### 5️⃣ Distribución de Valores")
+        
+        fig_hist, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        valores_no_cero = M[M > 0].flatten()
+        if len(valores_no_cero) > 0:
+            ax1.hist(valores_no_cero, bins=20, color='steelblue', edgecolor='black', alpha=0.7)
+            ax1.set_xlabel('Valor', fontweight='bold')
+            ax1.set_ylabel('Frecuencia', fontweight='bold')
+            ax1.set_title('Distribución de Valores > 0', fontweight='bold')
+            ax1.grid(True, alpha=0.3)
+            ax1.axvline(np.mean(valores_no_cero), color='red', linestyle='--', 
+                       label=f'Media: {np.mean(valores_no_cero):.2f}', linewidth=2)
+            ax1.legend()
+        
+        mot_directa = M.sum(axis=1)
+        dep_directa = M.sum(axis=0)
+        
+        ax2.scatter(dep_directa, mot_directa, alpha=0.6, s=80, c='steelblue', edgecolors='black')
+        ax2.set_xlabel('Dependencia Directa', fontweight='bold')
+        ax2.set_ylabel('Motricidad Directa', fontweight='bold')
+        ax2.set_title('Motricidad vs Dependencia', fontweight='bold')
+        ax2.grid(True, alpha=0.3)
+        
+        for i, var in enumerate(nombres):
+            if mot_directa[i] == 0 or dep_directa[i] == 0:
+                ax2.scatter(dep_directa[i], mot_directa[i], s=200, c='red', 
+                           marker='x', linewidths=3)
+        
+        plt.tight_layout()
+        st.pyplot(fig_hist)
+        
+        st.markdown("---")
+        
+        st.markdown("#### 6️⃣ Resumen")
+        
+        tiene_problemas = len(vars_sin_motricidad) > 0 or len(vars_sin_dependencia) > 0
+        
+        if tiene_problemas:
+            st.error("""
+            ### ⚠️ PROBLEMAS DETECTADOS
+            
+            Variables con ceros detectadas. Causas posibles:
+            1. Matriz incompleta
+            2. Celdas vacías en Excel
+            3. Variables aisladas intencionalmente
+            
+            **Consecuencias:**
+            - Motricidad = 0 → Clasificadas como autónomas
+            - No participan en propagación indirecta
+            """)
+            
+            col_sol1, col_sol2 = st.columns(2)
+            
+            with col_sol1:
+                st.info("""
+                **Solución 1: Revisar datos**
+                - Verificar Excel
+                - Completar relaciones
+                """)
+            
+            with col_sol2:
+                st.info("""
+                **Solución 2: Aceptar**
+                - Si es intencional
+                - Documentar razón
+                """)
+        else:
+            st.success("""
+            ### ✅ MATRIZ VÁLIDA
+            
+            Sin problemas estructurales detectados.
+            """)
 
 except Exception as e:
     st.error(f"❌ Error al procesar el archivo: {str(e)}")
-    st.info("Verifica que el archivo tenga el formato correcto (matriz cuadrada con nombres en primera columna).")
+    st.info("Verifica que el archivo tenga el formato correcto.")
     st.stop()
 
 # ============================================================
@@ -727,19 +543,14 @@ with col1:
         max_value=1.0,
         value=0.5,
         step=0.05,
-        help="""
-        Factor de atenuación exponencial para rutas indirectas.
-        - α = 1.0: Sin atenuación (todas las rutas tienen el mismo peso)
-        - α = 0.5: Atenuación moderada (recomendado)
-        - α < 0.3: Atenuación fuerte (solo rutas cortas son relevantes)
-        """
+        help="Factor de atenuación exponencial para rutas indirectas"
     )
 
 with col2:
     autoK = st.checkbox(
         "Calcular K óptimo automáticamente",
         value=True,
-        help="Encuentra el valor de K donde el ranking se estabiliza (recomendado)"
+        help="Encuentra el valor de K donde el ranking se estabiliza"
     )
     
     if autoK:
@@ -752,17 +563,14 @@ with col2:
             min_value=2,
             max_value=15,
             value=6,
-            help="Número máximo de órdenes indirectos a considerar (M, M², M³, ..., M^K)"
+            help="Número máximo de órdenes indirectos"
         )
 
 with col3:
     usar_mediana = st.checkbox(
         "Usar mediana para umbrales",
         value=False,
-        help="""
-        - Mediana: Divide en 50%-50% (menos sensible a outliers)
-        - Media: Método clásico MICMAC (recomendado)
-        """
+        help="Mediana divide en 50%-50%"
     )
     
     max_etiquetas = st.slider(
@@ -770,8 +578,7 @@ with col3:
         min_value=10,
         max_value=min(60, len(nombres)),
         value=min(30, len(nombres)),
-        step=5,
-        help="Controla la densidad de etiquetas para mejor legibilidad"
+        step=5
     )
 
 # ============================================================
@@ -780,20 +587,16 @@ with col3:
 st.markdown("### 📊 Paso 3: Resultados del Análisis")
 
 with st.spinner("🔄 Procesando análisis MICMAC..."):
-    # Influencias directas
     mot_dir = M.sum(axis=1)
     dep_dir = M.sum(axis=0)
     
-    # Influencias totales (directas + indirectas)
     M_tot = micmac_total(M, alpha, K_max)
     mot_tot = M_tot.sum(axis=1)
     dep_tot = M_tot.sum(axis=0)
     
-    # Influencias indirectas (diferencia)
     mot_ind = mot_tot - mot_dir
     dep_ind = dep_tot - dep_dir
     
-    # DataFrame consolidado
     df_all = pd.DataFrame({
         "Motricidad_directa": mot_dir,
         "Motricidad_indirecta": mot_ind,
@@ -803,7 +606,6 @@ with st.spinner("🔄 Procesando análisis MICMAC..."):
         "Dependencia_total": dep_tot
     }, index=nombres)
     
-    # Umbrales para clasificación
     if usar_mediana:
         mot_threshold = np.median(mot_tot)
         dep_threshold = np.median(dep_tot)
@@ -811,7 +613,6 @@ with st.spinner("🔄 Procesando análisis MICMAC..."):
         mot_threshold = np.mean(mot_tot)
         dep_threshold = np.mean(dep_tot)
     
-    # Clasificación en cuadrantes
     df_all['Clasificación'] = df_all.apply(
         lambda row: classify_quadrant(
             row['Motricidad_total'],
@@ -822,7 +623,6 @@ with st.spinner("🔄 Procesando análisis MICMAC..."):
         axis=1
     )
     
-    # Ranking por motricidad total
     order = np.argsort(-mot_tot)
     ranking_vars = [nombres[i] for i in order]
     
@@ -850,17 +650,15 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📄 Informe Ejecutivo"
 ])
 
-# ============================================================
 # TAB 1: RANKINGS
-# ============================================================
 with tab1:
     st.markdown(f"### 🏆 Ranking de Variables por Motricidad Total (α={alpha}, K={K_max})")
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Variables", len(nombres))
-    col2.metric("Variables Determinantes", len(df_all[df_all['Clasificación'] == 'Determinantes']))
-    col3.metric("Variables Críticas", len(df_all[df_all['Clasificación'] == 'Crítico/inestable']))
-    col4.metric("Variables Resultado", len(df_all[df_all['Clasificación'] == 'Variables resultado']))
+    col2.metric("Determinantes", len(df_all[df_all['Clasificación'] == 'Determinantes']))
+    col3.metric("Críticas", len(df_all[df_all['Clasificación'] == 'Crítico/inestable']))
+    col4.metric("Resultado", len(df_all[df_all['Clasificación'] == 'Variables resultado']))
     
     st.dataframe(
         df_rank.style.background_gradient(subset=['Motricidad_total'], cmap='YlOrRd'),
@@ -868,23 +666,19 @@ with tab1:
         height=400
     )
     
-    st.markdown("#### 📊 Tabla Completa: Directo + Indirecto + Total")
+    st.markdown("#### 📊 Tabla Completa")
     st.dataframe(
         df_all.sort_values('Motricidad_total', ascending=False).style.background_gradient(cmap='coolwarm'),
         use_container_width=True,
         height=400
     )
 
-# ============================================================
 # TAB 2: GRÁFICO DE SUBSISTEMAS
-# ============================================================
 with tab2:
-    st.markdown("### 📈 Gráfico de Subsistemas (Plano Motricidad-Dependencia)")
-    st.caption("Clasificación de variables según la metodología MICMAC de Godet (1990)")
+    st.markdown("### 📈 Gráfico de Subsistemas")
     
     fig_subsistemas, ax_sub = plt.subplots(figsize=(16, 12))
     
-    # Colores por cuadrante
     colors_map = {
         'Determinantes': '#FF4444',
         'Crítico/inestable': '#1166CC',
@@ -895,43 +689,31 @@ with tab2:
     colors = [colors_map[df_all.loc[var, 'Clasificación']] for var in nombres]
     sizes = [100 if df_all.loc[var, 'Clasificación'] == 'Crítico/inestable' else 80 for var in nombres]
     
-    # Scatter plot
-    scatter = ax_sub.scatter(
-        dep_tot, mot_tot,
-        c=colors,
-        s=sizes,
-        alpha=0.7,
-        edgecolors='black',
-        linewidth=1.5
-    )
+    scatter = ax_sub.scatter(dep_tot, mot_tot, c=colors, s=sizes, alpha=0.7, 
+                             edgecolors='black', linewidth=1.5)
     
-    # Líneas de referencia (umbrales)
-    ax_sub.axvline(dep_threshold, color='black', linestyle='--', linewidth=2, alpha=0.6, label='Umbrales')
+    ax_sub.axvline(dep_threshold, color='black', linestyle='--', linewidth=2, alpha=0.6)
     ax_sub.axhline(mot_threshold, color='black', linestyle='--', linewidth=2, alpha=0.6)
     
-    # Etiquetas de cuadrantes
     max_mot = max(mot_tot)
     max_dep = max(dep_tot)
     
-    ax_sub.text(dep_threshold * 0.5, max_mot * 0.9, 'DETERMINANTES\n(Palancas de acción)',
+    ax_sub.text(dep_threshold * 0.5, max_mot * 0.9, 'DETERMINANTES\n(Palancas)',
                 fontsize=13, fontweight='bold', ha='center', va='center',
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="red", alpha=0.6, edgecolor='black'),
-                color='white')
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="red", alpha=0.6), color='white')
     
-    ax_sub.text(max_dep * 0.75, max_mot * 0.9, 'CRÍTICO/INESTABLE\n(Variables clave)',
+    ax_sub.text(max_dep * 0.75, max_mot * 0.9, 'CRÍTICO/INESTABLE',
                 fontsize=13, fontweight='bold', ha='center', va='center',
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="darkblue", alpha=0.6, edgecolor='black'),
-                color='white')
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="darkblue", alpha=0.6), color='white')
     
-    ax_sub.text(dep_threshold * 0.5, mot_threshold * 0.3, 'AUTÓNOMAS\n(Independientes)',
+    ax_sub.text(dep_threshold * 0.5, mot_threshold * 0.3, 'AUTÓNOMAS',
                 fontsize=13, fontweight='bold', ha='center', va='center',
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="orange", alpha=0.6, edgecolor='black'))
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="orange", alpha=0.6))
     
-    ax_sub.text(max_dep * 0.75, mot_threshold * 0.3, 'VARIABLES RESULTADO\n(Indicadores)',
+    ax_sub.text(max_dep * 0.75, mot_threshold * 0.3, 'RESULTADO',
                 fontsize=13, fontweight='bold', ha='center', va='center',
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.6, edgecolor='black'))
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.6))
     
-    # Etiquetas para variables importantes
     importantes_idx = order[:min(max_etiquetas, len(nombres))]
     for i in importantes_idx:
         ax_sub.annotate(
@@ -939,16 +721,16 @@ with tab2:
             (dep_tot[i], mot_tot[i]),
             xytext=(5, 5), textcoords='offset points',
             fontsize=8, fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='gray'),
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
             arrowprops=dict(arrowstyle='->', color='gray', alpha=0.5, lw=0.8)
         )
     
     ax_sub.set_xlabel("Dependencia Total", fontweight='bold', fontsize=14)
     ax_sub.set_ylabel("Motricidad Total", fontweight='bold', fontsize=14)
-    ax_sub.set_title(f"GRÁFICO DE SUBSISTEMAS MICMAC (α={alpha}, K={K_max})", fontweight='bold', fontsize=16)
+    ax_sub.set_title(f"GRÁFICO DE SUBSISTEMAS MICMAC (α={alpha}, K={K_max})", 
+                    fontweight='bold', fontsize=16)
     ax_sub.grid(True, alpha=0.3)
     
-    # Leyenda
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF4444', markersize=10, label='Determinantes'),
@@ -956,31 +738,26 @@ with tab2:
         Line2D([0], [0], marker='o', color='w', markerfacecolor='#66BBFF', markersize=10, label='Variables resultado'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF9944', markersize=10, label='Autónomas')
     ]
-    ax_sub.legend(handles=legend_elements, loc='upper left', fontsize=11, frameon=True, shadow=True)
+    ax_sub.legend(handles=legend_elements, loc='upper left', fontsize=11)
     
     st.pyplot(fig_subsistemas)
     
-    # Botón de descarga
     img_subsistemas = io.BytesIO()
     fig_subsistemas.savefig(img_subsistemas, format='png', dpi=300, bbox_inches='tight')
     img_subsistemas.seek(0)
     st.download_button(
-        label="📥 Descargar Gráfico (PNG 300 DPI)",
+        label="📥 Descargar Gráfico (PNG)",
         data=img_subsistemas,
         file_name=f"micmac_subsistemas_a{alpha}_k{K_max}.png",
         mime="image/png"
     )
 
-# ============================================================
 # TAB 3: EJE ESTRATÉGICO
-# ============================================================
 with tab3:
     st.markdown("### 🎯 Gráfico del Eje de Estrategia")
-    st.caption("Variables con mayor valor estratégico (equilibrio entre influencia y dependencia)")
     
     fig_estrategia, ax_est = plt.subplots(figsize=(14, 11))
     
-    # Normalizar para calcular cercanía al eje
     max_dep_norm = max(dep_tot) if max(dep_tot) > 0 else 1
     max_mot_norm = max(mot_tot) if max(mot_tot) > 0 else 1
     
@@ -994,7 +771,6 @@ with tab3:
     
     strategic_scores = np.array(strategic_scores)
     
-    # Colores por nivel estratégico
     colors_est = []
     for score in strategic_scores:
         if score > np.percentile(strategic_scores, 75):
@@ -1008,12 +784,9 @@ with tab3:
     
     sizes_est = 50 + (strategic_scores - strategic_scores.min()) / (strategic_scores.max() - strategic_scores.min()) * 150
     
-    scatter_est = ax_est.scatter(dep_tot, mot_tot, c=colors_est, s=sizes_est, alpha=0.7, edgecolors='black', linewidth=1)
-    
-    # Eje estratégico (diagonal)
+    ax_est.scatter(dep_tot, mot_tot, c=colors_est, s=sizes_est, alpha=0.7, edgecolors='black', linewidth=1)
     ax_est.plot([0, max_dep_norm], [0, max_mot_norm], 'r--', linewidth=3, alpha=0.8, label='Eje de estrategia')
     
-    # Etiquetas para top estratégicas
     strategic_indices = np.argsort(strategic_scores)[-min(15, len(nombres)):]
     for idx in strategic_indices:
         ax_est.annotate(
@@ -1021,867 +794,168 @@ with tab3:
             (dep_tot[idx], mot_tot[idx]),
             xytext=(8, 8), textcoords='offset points',
             fontsize=9, fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.85, edgecolor='orange'),
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.85),
             arrowprops=dict(arrowstyle='->', color='orange', alpha=0.7, lw=1.2)
         )
     
     ax_est.set_xlabel("Dependencia Total", fontweight='bold', fontsize=14)
     ax_est.set_ylabel("Motricidad Total", fontweight='bold', fontsize=14)
-    ax_est.set_title(f"EJE DE ESTRATEGIA MICMAC (α={alpha}, K={K_max})", fontweight='bold', fontsize=16)
+    ax_est.set_title(f"EJE DE ESTRATEGIA (α={alpha}, K={K_max})", fontweight='bold', fontsize=16)
     ax_est.grid(True, alpha=0.3)
-    ax_est.legend(fontsize=12, loc='upper left')
+    ax_est.legend(fontsize=12)
     
     st.pyplot(fig_estrategia)
     
-    # Tabla de variables estratégicas
-    st.markdown("#### 🎯 Top 15 Variables Más Estratégicas")
+    st.markdown("#### 🎯 Top 15 Variables Estratégicas")
     df_estrategicas = pd.DataFrame({
         'Variable': [nombres[i] for i in strategic_indices[::-1]],
         'Motricidad': [mot_tot[i] for i in strategic_indices[::-1]],
         'Dependencia': [dep_tot[i] for i in strategic_indices[::-1]],
-        'Puntuación_Estratégica': [strategic_scores[i] for i in strategic_indices[::-1]],
+        'Puntuación': [strategic_scores[i] for i in strategic_indices[::-1]],
         'Clasificación': [df_all.loc[nombres[i], 'Clasificación'] for i in strategic_indices[::-1]]
     })
-    st.dataframe(df_estrategicas.style.background_gradient(subset=['Puntuación_Estratégica'], cmap='RdYlGn'), use_container_width=True)
-    
-    # Descarga
-    img_estrategia = io.BytesIO()
-    fig_estrategia.savefig(img_estrategia, format='png', dpi=300, bbox_inches='tight')
-    img_estrategia.seek(0)
-    st.download_button(
-        label="📥 Descargar Gráfico Eje Estratégico (PNG)",
-        data=img_estrategia,
-        file_name=f"micmac_eje_estrategia_a{alpha}_k{K_max}.png",
-        mime="image/png"
-    )
+    st.dataframe(df_estrategicas.style.background_gradient(subset=['Puntuación'], cmap='RdYlGn'), 
+                use_container_width=True)
 
-# ============================================================
 # TAB 4: ANÁLISIS DE ESTABILIDAD
-# ============================================================
 with tab4:
     st.markdown("### 🔬 Análisis de Sensibilidad y Estabilidad")
-    st.caption("Evalúa cómo cambia el ranking bajo diferentes configuraciones de α y K")
-    
-    with st.expander("ℹ️ ¿Qué es el análisis de estabilidad?"):
-        st.markdown("""
-        El **análisis de estabilidad** verifica si los resultados son robustos ante cambios en los parámetros.
-        
-        - **Variables robustas:** Mantienen su posición en el ranking incluso con diferentes α y K
-        - **Variables sensibles:** Cambian significativamente de posición según los parámetros
-        
-        Un buen análisis MICMAC debe mostrar **estabilidad en las variables clave** (top 5-10).
-        """)
     
     col1, col2 = st.columns(2)
     with col1:
         alphas_test = st.multiselect(
-            "Valores de α a probar:",
+            "Valores de α:",
             options=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
             default=[0.3, 0.5, 0.7]
         )
     with col2:
         Ks_test = st.multiselect(
-            "Valores de K a probar:",
+            "Valores de K:",
             options=list(range(2, 13)),
             default=[3, 6, 9]
         )
     
-    if st.button("🔄 Ejecutar Análisis de Estabilidad", type="primary"):
-        with st.spinner("Calculando estabilidad para múltiples configuraciones..."):
+    if st.button("🔄 Ejecutar Análisis", type="primary"):
+        with st.spinner("Calculando..."):
             df_stability = analyze_stability(M, alphas_test, Ks_test)
             
-            # Agregar nombres de variables
             for i in range(1, 6):
                 df_stability[f'Variable_Top{i}'] = df_stability[f'top_{i}'].apply(lambda idx: nombres[idx])
             
-            st.success(f"✅ Análisis completado: {len(df_stability)} configuraciones probadas")
+            st.success(f"✅ {len(df_stability)} configuraciones probadas")
             
-            # Mostrar tabla de resultados
-            st.markdown("#### 📊 Resultados del Análisis de Estabilidad")
             display_cols = ['alpha', 'K'] + [f'Variable_Top{i}' for i in range(1, 6)]
-            st.dataframe(
-                df_stability[display_cols],
-                use_container_width=True,
-                height=400
-            )
+            st.dataframe(df_stability[display_cols], use_container_width=True, height=400)
             
-            # Análisis de frecuencia en top-5
-            st.markdown("#### 🏆 Variables Más Frecuentes en Top-5 (Robustas)")
+            st.markdown("#### 🏆 Variables Más Frecuentes en Top-5")
             all_tops = []
-            for col in ['Variable_Top1', 'Variable_Top2', 'Variable_Top3', 'Variable_Top4', 'Variable_Top5']:
+            for col in [f'Variable_Top{i}' for i in range(1, 6)]:
                 all_tops.extend(df_stability[col].tolist())
             
             from collections import Counter
             freq_counter = Counter(all_tops)
-            df_freq = pd.DataFrame(freq_counter.most_common(15), columns=['Variable', 'Frecuencia_en_Top5'])
-            df_freq['Porcentaje'] = (df_freq['Frecuencia_en_Top5'] / len(df_stability) * 100).round(1)
+            df_freq = pd.DataFrame(freq_counter.most_common(15), columns=['Variable', 'Frecuencia'])
+            df_freq['Porcentaje'] = (df_freq['Frecuencia'] / len(df_stability) * 100).round(1)
             
-            st.dataframe(df_freq.style.background_gradient(subset=['Frecuencia_en_Top5'], cmap='Greens'), use_container_width=True)
-            
-            st.info(f"""
-            **Interpretación:** Las variables que aparecen en el top-5 en **más del 80%** de las configuraciones 
-            son consideradas **altamente robustas** y deben ser priorizadas en la estrategia.
-            """)
-    
-    else:
-        st.info("👆 Haz clic en el botón para ejecutar el análisis de estabilidad")
+            st.dataframe(df_freq.style.background_gradient(subset=['Frecuencia'], cmap='Greens'), 
+                        use_container_width=True)
 
-# ============================================================
 # TAB 5: GRÁFICOS ADICIONALES
-# ============================================================
-
-# ============================================================
-# TAB 5: GRÁFICOS ADICIONALES (VERSIÓN MEJORADA)
-# ============================================================
 with tab5:
     st.markdown("### 📊 Gráficos Complementarios")
     
-    # ========== GRÁFICO 1: TOP 15 BARRAS HORIZONTALES ==========
-    st.markdown("#### 📊 Top 15 Variables por Motricidad Total")
-    
-    fig_bar_h, ax_bar_h = plt.subplots(figsize=(14, 8))
+    st.markdown("#### 📊 Top 15 por Motricidad")
+    fig_bar, ax_bar = plt.subplots(figsize=(14, 8))
     
     top_15_idx = order[:15]
     top_15_vars = [nombres[i] for i in top_15_idx]
     top_15_mot = mot_tot[top_15_idx]
     
-    # Colores según clasificación
     colors_bar = []
     for var in top_15_vars:
-        clasificacion = df_all.loc[var, 'Clasificación']
-        if clasificacion == 'Crítico/inestable':
+        clf = df_all.loc[var, 'Clasificación']
+        if clf == 'Crítico/inestable':
             colors_bar.append('#1166CC')
-        elif clasificacion == 'Determinantes':
+        elif clf == 'Determinantes':
             colors_bar.append('#FF4444')
-        elif clasificacion == 'Variables resultado':
+        elif clf == 'Variables resultado':
             colors_bar.append('#66BBFF')
         else:
             colors_bar.append('#FF9944')
     
-    # Gráfico horizontal (invertido para que el más alto esté arriba)
     y_pos = np.arange(len(top_15_vars))
-    ax_bar_h.barh(y_pos, top_15_mot, color=colors_bar, edgecolor='black', linewidth=0.5)
-    ax_bar_h.set_yticks(y_pos)
-    ax_bar_h.set_yticklabels(top_15_vars, fontsize=10)
-    ax_bar_h.invert_yaxis()  # El primero arriba
-    ax_bar_h.set_xlabel("Motricidad Total", fontweight='bold', fontsize=12)
-    ax_bar_h.set_title(f"Top 15 Variables por Motricidad Total (α={alpha}, K={K_max})", 
-                      fontweight='bold', fontsize=14)
-    ax_bar_h.grid(axis='x', alpha=0.3)
+    ax_bar.barh(y_pos, top_15_mot, color=colors_bar, edgecolor='black')
+    ax_bar.set_yticks(y_pos)
+    ax_bar.set_yticklabels(top_15_vars)
+    ax_bar.invert_yaxis()
+    ax_bar.set_xlabel("Motricidad Total", fontweight='bold')
+    ax_bar.set_title(f"Top 15 Variables (α={alpha}, K={K_max})", fontweight='bold')
+    ax_bar.grid(axis='x', alpha=0.3)
     
-    # Agregar valores al final de cada barra
-    for i, (var, val) in enumerate(zip(top_15_vars, top_15_mot)):
-        ax_bar_h.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
+    for i, val in enumerate(top_15_mot):
+        ax_bar.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
     
-    st.pyplot(fig_bar_h)
-    
-    # Botón descarga
-    img_bar_h = io.BytesIO()
-    fig_bar_h.savefig(img_bar_h, format='png', dpi=300, bbox_inches='tight')
-    img_bar_h.seek(0)
-    st.download_button(
-        label="📥 Descargar Top 15 Barras (PNG)",
-        data=img_bar_h,
-        file_name=f"micmac_top15_barras_a{alpha}_k{K_max}.png",
-        mime="image/png"
-    )
-    
-    st.markdown("---")
-    
-    # ========== GRÁFICO 2: SCATTER MOTRICIDAD VS RANKING (MEJORADO) ==========
-    st.markdown("#### 📈 Motricidad Total vs Ranking")
-    st.caption("Vista completa de todas las variables ordenadas por influencia")
-    
-    fig_scatter, ax_scatter = plt.subplots(figsize=(16, 8))
-    
-    x_pos = np.arange(1, len(nombres) + 1)
-    
-    # Colores por clasificación
-    colors_scatter = []
-    for idx in order:
-        clasificacion = df_all.loc[nombres[idx], 'Clasificación']
-        if clasificacion == 'Crítico/inestable':
-            colors_scatter.append('#1166CC')
-        elif clasificacion == 'Determinantes':
-            colors_scatter.append('#FF4444')
-        elif clasificacion == 'Variables resultado':
-            colors_scatter.append('#66BBFF')
-        else:
-            colors_scatter.append('#FF9944')
-    
-    # Scatter plot
-    ax_scatter.scatter(x_pos, mot_tot[order], c=colors_scatter, s=80, alpha=0.7, 
-                      edgecolors='black', linewidth=0.5)
-    
-    # Etiquetas solo para top 20
-    for i in range(min(20, len(nombres))):
-        idx = order[i]
-        ax_scatter.text(i + 1, mot_tot[idx], nombres[idx][:20], 
-                       rotation=90, fontsize=7, ha='center', va='bottom')
-    
-    ax_scatter.set_xlabel("Ranking de Variable", fontweight='bold', fontsize=12)
-    ax_scatter.set_ylabel("Motricidad Total", fontweight='bold', fontsize=12)
-    ax_scatter.set_title(f"Motricidad Total vs Ranking (α={alpha}, K={K_max})", 
-                        fontweight='bold', fontsize=14)
-    ax_scatter.grid(True, alpha=0.3)
-    
-    # Leyenda
-    from matplotlib.lines import Line2D
-    legend_scatter = [
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF4444', markersize=8, label='Determinantes'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='#1166CC', markersize=8, label='Crítico/inestable'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='#66BBFF', markersize=8, label='Variables resultado'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF9944', markersize=8, label='Autónomas')
-    ]
-    ax_scatter.legend(handles=legend_scatter, loc='upper right', fontsize=10)
-    
-    st.pyplot(fig_scatter)
-    
-    # Botón descarga
-    img_scatter = io.BytesIO()
-    fig_scatter.savefig(img_scatter, format='png', dpi=300, bbox_inches='tight')
-    img_scatter.seek(0)
-    st.download_button(
-        label="📥 Descargar Scatter Ranking (PNG)",
-        data=img_scatter,
-        file_name=f"micmac_scatter_ranking_a{alpha}_k{K_max}.png",
-        mime="image/png"
-    )
-    
-    st.markdown("---")
-    
-    # ========== GRÁFICO 3: HEATMAP CORREGIDO ==========
-    st.markdown("#### 🔥 Heatmap: Motricidad vs Dependencia (Top 20 variables)")
-    st.caption("Vista consolidada de influencias directas, indirectas y totales")
-    
-    # Seleccionar top 20 por motricidad total
-    top_20_for_heat = order[:20]
-    df_heat = df_all.loc[[nombres[i] for i in top_20_for_heat], 
-                         ['Motricidad_directa', 'Motricidad_indirecta', 'Motricidad_total',
-                          'Dependencia_directa', 'Dependencia_indirecta', 'Dependencia_total']]
-    
-    # Transponer para que variables estén en columnas
-    df_heat_T = df_heat.T
-    
-    fig_heat, ax_heat = plt.subplots(figsize=(18, 6))
-    
-    # Heatmap SIN anotaciones (para evitar superposición)
-    sns.heatmap(df_heat_T, annot=False, fmt=".0f", cmap='YlOrRd', 
-                linewidths=0.5, cbar_kws={'label': 'Valor'}, ax=ax_heat)
-    
-    ax_heat.set_title("Heatmap de Influencias (Top 20 variables)", fontweight='bold', fontsize=14)
-    ax_heat.set_xlabel("Variables", fontweight='bold', fontsize=12)
-    ax_heat.set_ylabel("Métricas", fontweight='bold', fontsize=12)
-    ax_heat.set_xticklabels(ax_heat.get_xticklabels(), rotation=45, ha='right', fontsize=8)
-    ax_heat.set_yticklabels(ax_heat.get_yticklabels(), rotation=0, fontsize=10)
-    
-    st.pyplot(fig_heat)
-    
-    # Botón descarga
-    img_heat = io.BytesIO()
-    fig_heat.savefig(img_heat, format='png', dpi=300, bbox_inches='tight')
-    img_heat.seek(0)
-    st.download_button(
-        label="📥 Descargar Heatmap (PNG)",
-        data=img_heat,
-        file_name=f"micmac_heatmap_a{alpha}_k{K_max}.png",
-        mime="image/png"
-    )
-    
-    st.markdown("---")
-    
-    # ========== GRÁFICO 4: DISTRIBUCIÓN POR CUADRANTE ==========
-    st.markdown("#### 📈 Distribución de Variables por Cuadrante")
-    
-    fig_pie, ax_pie = plt.subplots(figsize=(10, 7))
-    
-    counts = df_all['Clasificación'].value_counts()
-    colors_pie = {
-        'Determinantes': '#FF4444',
-        'Crítico/inestable': '#1166CC',
-        'Variables resultado': '#66BBFF',
-        'Autónomas': '#FF9944'
-    }
-    
-    # Asegurar orden consistente
-    ordered_labels = ['Crítico/inestable', 'Determinantes', 'Variables resultado', 'Autónomas']
-    ordered_counts = [counts.get(label, 0) for label in ordered_labels]
-    ordered_colors = [colors_pie[label] for label in ordered_labels]
-    
-    wedges, texts, autotexts = ax_pie.pie(
-        ordered_counts, 
-        labels=ordered_labels, 
-        autopct='%1.1f%%',
-        colors=ordered_colors,
-        startangle=90,
-        textprops={'fontsize': 12, 'fontweight': 'bold'}
-    )
-    
-    # Mejorar contraste de porcentajes
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontsize(11)
-    
-    ax_pie.set_title("Distribución de Variables por Clasificación MICMAC", 
-                    fontweight='bold', fontsize=14)
-    
-    st.pyplot(fig_pie)
-    
-    # Tabla de resumen
-    st.markdown("#### 📊 Resumen Cuantitativo")
-    
-    summary_data = {
-        'Clasificación': ordered_labels,
-        'Cantidad': ordered_counts,
-        'Porcentaje': [f"{(count/len(nombres)*100):.1f}%" for count in ordered_counts],
-        'Interpretación': [
-            'Variables clave de alto impacto (monitorear)',
-            'Palancas de control directo (actuar)',
-            'Indicadores de resultado (medir)',
-            'Variables independientes (gestión rutinaria)'
-        ]
-    }
-    
-    df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary, use_container_width=True)
+    st.pyplot(fig_bar)
 
-# ============================================================
 # TAB 6: INFORME EJECUTIVO
-# ============================================================
 with tab6:
-    st.markdown("### 📄 Informe Ejecutivo de Inteligencia Estratégica")
-    st.caption("Genera un informe completo con análisis automático de resultados")
+    st.markdown("### 📄 Informe Ejecutivo")
     
     if st.button("📝 Generar Informe Completo", type="primary"):
-        with st.spinner("Generando informe ejecutivo..."):
-            # Análisis automático
-            top_5_motoras = ranking_vars[:5]
-            strategic_top_indices = np.argsort(strategic_scores)[-3:][::-1]
-            top_3_estrategicas = [nombres[i] for i in strategic_top_indices]
-            
-            count_determinantes = len(df_all[df_all['Clasificación'] == 'Determinantes'])
-            count_criticas = len(df_all[df_all['Clasificación'] == 'Crítico/inestable'])
-            count_resultado = len(df_all[df_all['Clasificación'] == 'Variables resultado'])
-            count_autonomas = len(df_all[df_all['Clasificación'] == 'Autónomas'])
-            
-            vars_alta_motricidad = df_all[df_all['Motricidad_total'] > np.percentile(mot_tot, 90)].index.tolist()
-            vars_alta_dependencia = df_all[df_all['Dependencia_total'] > np.percentile(dep_tot, 90)].index.tolist()
-            
-            fecha_actual = datetime.now().strftime("%d de %B de %Y")
-            
-            # Generar contenido del informe
-            informe_contenido = f"""# INFORME DE INTELIGENCIA ESTRATÉGICA
-## Análisis Estructural MICMAC - Sistema Complejo
+        fecha_actual = datetime.now().strftime("%d de %B de %Y")
+        
+        top_5_motoras = ranking_vars[:5]
+        count_determinantes = len(df_all[df_all['Clasificación'] == 'Determinantes'])
+        count_criticas = len(df_all[df_all['Clasificación'] == 'Crítico/inestable'])
+        count_resultado = len(df_all[df_all['Clasificación'] == 'Variables resultado'])
+        count_autonomas = len(df_all[df_all['Clasificación'] == 'Autónomas'])
+        
+        informe = f"""# INFORME EJECUTIVO - ANÁLISIS MICMAC
 
-**Generado:** {fecha_actual}  
-**Parámetros:** α = {alpha} • K = {K_max} • Variables = {len(nombres)}  
-**Método de umbral:** {'Mediana' if usar_mediana else 'Media aritmética'}
+**Fecha:** {fecha_actual}  
+**Parámetros:** α={alpha}, K={K_max}, Variables={len(nombres)}
 
----
+## RESUMEN
 
-## 📋 RESUMEN EJECUTIVO
+- **{count_criticas}** variables críticas
+- **{count_determinantes}** variables determinantes
+- **{count_resultado}** variables resultado
+- **{count_autonomas}** variables autónomas
 
-El análisis MICMAC realizado sobre **{len(nombres)} variables** del sistema revela patrones estructurales críticos para la toma de decisiones estratégicas. Con parámetros de configuración α={alpha} y K={K_max}, se identificaron:
+## TOP 5 VARIABLES MOTORAS
 
-- **{count_criticas} variables críticas/inestables** que requieren monitoreo permanente
-- **{count_determinantes} variables determinantes** que constituyen palancas de acción directa
-- **{count_resultado} variables resultado** que funcionan como indicadores de impacto
-- **{count_autonomas} variables autónomas** con bajo nivel de interacción sistémica
-
-### 🎯 HALLAZGO PRINCIPAL
-
-Las variables **{top_3_estrategicas[0]}**, **{top_3_estrategicas[1]}** y **{top_3_estrategicas[2]}** emergen como los factores de **mayor valor estratégico** del sistema, al combinar alta influencia con posicionamiento óptimo en el eje de estrategia.
+{chr(10).join([f"{i+1}. {var}" for i, var in enumerate(top_5_motoras)])}
 
 ---
-
-## 🔍 MARCO TEÓRICO Y METODOLOGÍA
-
-### Fundamentos del Método MICMAC
-
-El método MICMAC (Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación) fue desarrollado por **Michel Godet** en 1990 como herramienta central de la prospectiva estratégica francesa. Su objetivo es **identificar variables clave** en sistemas complejos mediante el análisis de influencias directas e indirectas.
-
-### Algoritmo Implementado
-
-1. **Matriz de influencias directas (M):** Captura relaciones inmediatas entre variables
-2. **Propagación de influencias indirectas:** M_total = M + α·M² + α²·M³ + ... + α^(K-1)·M^K
-3. **Cálculo de indicadores:**
-   - Motricidad = Σ filas (capacidad de influir)
-   - Dependencia = Σ columnas (susceptibilidad a ser influido)
-4. **Clasificación en cuadrantes** según umbrales de motricidad/dependencia
-
-### Parámetros de Configuración
-
-- **α = {alpha}:** Factor de atenuación exponencial
-  - Valores altos (0.7-1.0): Mayor peso a rutas largas
-  - Valores bajos (0.2-0.4): Privilegia influencias de corto alcance
-  
-- **K = {K_max}:** Profundidad de propagación {'(auto-calculado por estabilidad)' if autoK else '(configurado manualmente)'}
-  - Representa el número máximo de "saltos" en las cadenas de influencia
-  - El algoritmo converge típicamente entre K=5 y K=9
-
----
-
-## 📊 CLASIFICACIÓN SISTÉMICA DE VARIABLES
-
-### 🔴 ZONA 1: Variables DETERMINANTES (Cuadrante Superior Izquierdo)
-**Total identificadas: {count_determinantes} ({count_determinantes/len(nombres)*100:.1f}% del sistema)**
-
-**Características:**
-- Alta motricidad (capacidad de influir)
-- Baja dependencia (poca influencia recibida)
-
-**Interpretación estratégica:**
-Son las **PALANCAS DE CONTROL** del sistema. Estas variables:
-- Son fáciles de manejar y controlar directamente
-- Generan efectos multiplicadores significativos
-- Representan puntos de intervención de bajo riesgo
-- Deben ser priorizadas en la asignación de recursos
-
-**Acción recomendada:** **ACTUAR** - Invertir recursos para maximizar su potencial
-
-**Variables identificadas:**
-{chr(10).join([f"• {var}" for var in df_all[df_all['Clasificación'] == 'Determinantes'].index[:8]])}
-
----
-
-### 🔵 ZONA 2: Variables CRÍTICAS/INESTABLES (Cuadrante Superior Derecho)
-**Total identificadas: {count_criticas} ({count_criticas/len(nombres)*100:.1f}% del sistema)**
-
-**Características:**
-- Alta motricidad (gran capacidad de influir)
-- Alta dependencia (muy influidas por otras)
-
-**Interpretación estratégica:**
-Son **AMPLIFICADORES SISTÉMICOS** que magnifican cualquier cambio. Estas variables:
-- Difíciles de controlar directamente
-- Generan efectos en cascada impredecibles
-- Funcionan como "relays" o transmisores de impulsos
-- Requieren gestión especializada y monitoreo continuo
-
-**Acción recomendada:** **MONITOREAR Y EQUILIBRAR** - Sistema de alertas tempranas
-
-**Riesgo:** Alto - Pueden desestabilizar el sistema completo
-
-**Variables identificadas:**
-{chr(10).join([f"• {var}" for var in df_all[df_all['Clasificación'] == 'Crítico/inestable'].index[:8]])}
-
----
-
-### 💧 ZONA 3: Variables RESULTADO (Cuadrante Inferior Derecho)
-**Total identificadas: {count_resultado} ({count_resultado/len(nombres)*100:.1f}% del sistema)**
-
-**Características:**
-- Baja motricidad (poca capacidad de influir)
-- Alta dependencia (muy influidas por el sistema)
-
-**Interpretación estratégica:**
-Son **INDICADORES DE IMPACTO** que reflejan el estado del sistema. Estas variables:
-- No deben ser objetivos de intervención directa
-- Funcionan como "termómetros" del sistema
-- Útiles para medir efectos de acciones sobre otras variables
-- Cambian como consecuencia, no como causa
-
-**Acción recomendada:** **MEDIR** - Usar como KPIs y señales de alerta
-
-**Variables identificadas:**
-{chr(10).join([f"• {var}" for var in df_all[df_all['Clasificación'] == 'Variables resultado'].index[:8]])}
-
----
-
-### 🟠 ZONA 4: Variables AUTÓNOMAS (Cuadrante Inferior Izquierdo)
-**Total identificadas: {count_autonomas} ({count_autonomas/len(nombres)*100:.1f}% del sistema)**
-
-**Características:**
-- Baja motricidad (poca influencia sobre otras)
-- Baja dependencia (poco influidas)
-
-**Interpretación estratégica:**
-Son **FACTORES INDEPENDIENTES** con baja interacción sistémica. Estas variables:
-- Operan de forma relativamente aislada
-- Tienen bajo impacto en la dinámica general
-- No requieren atención prioritaria
-- Pueden gestionarse de forma rutinaria
-
-**Acción recomendada:** **GESTIÓN RUTINARIA** - Prioridad baja
-
-**Variables identificadas:**
-{chr(10).join([f"• {var}" for var in df_all[df_all['Clasificación'] == 'Autónomas'].index[:8]])}
-
----
-
-## 🏆 ANÁLISIS DE VARIABLES MOTORAS
-
-### Top 10 Variables con Mayor Influencia Sistémica
-
-{chr(10).join([f"{i+1}. **{ranking_vars[i]}**\n   - Motricidad total: {mot_tot[order[i]]:.0f}\n   - Motricidad directa: {mot_dir[order[i]]:.0f} • Indirecta: {mot_ind[order[i]]:.0f}\n   - Dependencia total: {dep_tot[order[i]]:.0f}\n   - Clasificación: {df_all.loc[ranking_vars[i], 'Clasificación']}\n" for i in range(10)])}
-
-### Implicación Estratégica
-
-Estas variables constituyen las **palancas de cambio primarias** del sistema. Cualquier modificación en estos factores generará **efectos multiplicadores** significativos.
-
-**Concentración de influencia:** La variable líder ({top_5_motoras[0]}) representa el **{(mot_tot[order[0]]/mot_tot.sum()*100):.2f}%** de la motricidad total del sistema, lo cual indica {'una concentración significativa de poder de influencia' if mot_tot[order[0]]/mot_tot.sum() > 0.15 else 'una distribución relativamente equilibrada de la influencia'}.
-
----
-
-## 🎯 VARIABLES DE ALTO VALOR ESTRATÉGICO
-
-Las siguientes variables combinan **alta influencia** con **posicionamiento óptimo** en el eje estratégico (equilibrio entre motricidad y dependencia):
-
-### Top 10 Variables Estratégicas
-
-{chr(10).join([f"{i+1}. **{nombres[idx]}**\n   - Puntuación estratégica: {strategic_scores[idx]:.3f}\n   - Motricidad: {mot_tot[idx]:.0f} • Dependencia: {dep_tot[idx]:.0f}\n   - Clasificación: {df_all.loc[nombres[idx], 'Clasificación']}\n" for i, idx in enumerate(np.argsort(strategic_scores)[-10:][::-1])])}
-
----
-
-## ⚠️ VARIABLES DE ALTA CRITICIDAD
-
-### Variables con Motricidad Extrema (Percentil 90+)
-**Total: {len(vars_alta_motricidad)} variables**
-
-{chr(10).join([f"• **{var}** (Motricidad: {mot_tot[nombres.index(var)]:.0f})" for var in vars_alta_motricidad[:10]])}
-
-**Análisis de riesgo:** Estas variables tienen capacidad de **desencadenar cambios sistémicos masivos**. Requieren protocolos de gestión especializados.
-
-### Variables con Dependencia Extrema (Percentil 90+)
-**Total: {len(vars_alta_dependencia)} variables**
-
-{chr(10).join([f"• **{var}** (Dependencia: {dep_tot[nombres.index(var)]:.0f})" for var in vars_alta_dependencia[:10]])}
-
-**Análisis de vulnerabilidad:** Estas variables son **altamente sensibles** a cambios externos y deben monitorearse como indicadores tempranos de transformaciones sistémicas.
-
----
-
-## 💡 RECOMENDACIONES ESTRATÉGICAS
-
-### PRIORIDAD CRÍTICA (Implementación Inmediata)
-
-#### 1. Focalización en Variables Determinantes
-Concentrar **80% de los recursos** en las {count_determinantes} variables determinantes identificadas, priorizando:
-- **Prioridad 1:** {top_5_motoras[0]} (máxima motricidad)
-- **Prioridad 2:** {top_5_motoras[1]}
-- **Prioridad 3:** {top_5_motoras[2]}
-
-**Justificación:** Alto impacto, bajo riesgo, control directo
-
-#### 2. Gestión de Variables Críticas/Inestables
-Desarrollar **planes de contingencia** para las {count_criticas} variables crítico/inestables:
-- Sistema de monitoreo en tiempo real
-- Protocolos de respuesta rápida ante cambios
-- Análisis de sensibilidad trimestral
-- Escenarios de impacto múltiple
-
-**Justificación:** Alto riesgo de efectos sistémicos impredecibles
-
----
-
-### PRIORIDAD ALTA (Planificación Táctica - 3 meses)
-
-#### 3. Sistema de Monitoreo de Variables Resultado
-Establecer **KPIs basados** en las {count_resultado} variables resultado:
-- Dashboard de indicadores en tiempo real
-- Alertas automáticas ante desviaciones >15%
-- Revisión semanal de tendencias
-
-**Justificación:** Funcionan como sistema de alerta temprana
-
-#### 4. Optimización del Eje Estratégico
-Priorizar inversión en las **3 variables más estratégicas**:
-- {top_3_estrategicas[0]} (máximo valor estratégico)
-- {top_3_estrategicas[1]}
-- {top_3_estrategicas[2]}
-
-**Justificación:** Óptimo equilibrio influencia/dependencia
-
----
-
-### PRIORIDAD MEDIA (Gestión Rutinaria)
-
-#### 5. Variables Autónomas
-Las {count_autonomas} variables autónomas pueden gestionarse mediante:
-- Procedimientos estándar operativos
-- Revisión trimestral (no semanal)
-- Asignación de recursos residual
-
-**Justificación:** Bajo impacto sistémico
-
----
-
-## 📈 ANÁLISIS DE ESCENARIOS
-
-### Escenario Optimista: Control Efectivo
-**Supuesto:** Se logra control óptimo de las top 5 variables motoras
-
-**Impacto proyectado:**
-- Influencia directa sobre el **{(sum(mot_tot[order[:5]])/mot_tot.sum()*100):.1f}%** de la motricidad total
-- Efecto cascada sobre **{len([v for v in nombres if dep_tot[nombres.index(v)] > np.percentile(dep_tot, 75)])}** variables altamente dependientes
-- ROI estimado: Alto (debido a efecto multiplicador)
-
-**Probabilidad:** Media-Alta (variables con buen nivel de controlabilidad)
-
----
-
-### Escenario de Riesgo: Shock Sistémico
-**Supuesto:** Impacto negativo simultáneo en variables de alta dependencia
-
-**Impacto proyectado:**
-- Hasta **{len(vars_alta_dependencia)}** variables ({len(vars_alta_dependencia)/len(nombres)*100:.1f}% del sistema) en riesgo
-- Propagación vía variables crítico/inestables ({count_criticas} identificadas)
-- Tiempo de estabilización: {'6-12 meses' if count_criticas > len(nombres)*0.25 else '3-6 meses'}
-
-**Probabilidad:** {'Alta' if count_criticas > len(nombres)*0.3 else 'Media'} (sistema con {'alta' if count_criticas > len(nombres)*0.3 else 'moderada'} interconexión)
-
-**Medidas de mitigación:**
-1. Fortalecer variables determinantes como "amortiguadores"
-2. Diversificar dependencias de variables críticas
-3. Plan de contingencia para cada variable de alta dependencia
-
----
-
-### Escenario de Intervención Estratégica: Optimización Focal
-**Supuesto:** Actuación sobre las 3 variables más estratégicas
-
-**Impacto proyectado:**
-- Control sobre el **{(sum([mot_tot[nombres.index(var)] for var in top_3_estrategicas if var in nombres])/mot_tot.sum()*100):.1f}%** de la dinámica sistémica
-- Influencia sostenible (baja dependencia = menor vulnerabilidad)
-- Balance óptimo entre impacto y controlabilidad
-
-**Probabilidad:** Alta (enfoque en variables con mejor posicionamiento estratégico)
-
-**Recursos necesarios:** {'Alto' if (sum([mot_tot[nombres.index(var)] for var in top_3_estrategicas if var in nombres])/mot_tot.sum()) > 0.3 else 'Medio'}
-
----
-
-## 📊 INDICADORES CLAVE DE DESEMPEÑO (KPIs)
-
-### KPIs de Control Estratégico
-
-| Indicador | Valor Actual | Umbral Crítico | Estado |
-|-----------|--------------|----------------|--------|
-| **Índice de Concentración** | {(mot_tot[order[0]]/mot_tot.sum()*100):.2f}% | >15% | {'🔴 Crítico' if (mot_tot[order[0]]/mot_tot.sum()*100) > 15 else '🟢 Normal'} |
-| **Ratio Variables Críticas** | {count_criticas/len(nombres):.3f} | >0.30 | {'🔴 Crítico' if count_criticas/len(nombres) > 0.30 else '🟡 Precaución' if count_criticas/len(nombres) > 0.15 else '🟢 Normal'} |
-| **Coef. Dependencia Media** | {np.mean(dep_tot):.2f} | >150 | {'🟡 Precaución' if np.mean(dep_tot) > 150 else '🟢 Normal'} |
-| **Variables Autónomas** | {count_autonomas/len(nombres)*100:.1f}% | >40% | {'🟡 Fragmentado' if count_autonomas/len(nombres) > 0.40 else '🟢 Integrado'} |
-
-### Interpretación de Estados
-
-- **🟢 Normal:** Sistema dentro de parámetros óptimos de operación
-- **🟡 Precaución:** Monitorear estrechamente, implementar medidas preventivas
-- **🔴 Crítico:** Requiere intervención inmediata
-
-### Umbrales de Alerta Automatizados
-
-1. **Alerta Nivel 1 (Informativa):** Cambio >10% en motricidad de variables top-10
-2. **Alerta Nivel 2 (Precaución):** Cambio >20% en variables crítico/inestables
-3. **Alerta Nivel 3 (Crítica):** Cambio >30% en variable líder o simultáneo en 3+ variables críticas
-
----
-
-## 🎯 MATRIZ DE DECISIONES
-
-### Priorización de Inversiones (Próximo Trimestre)
-
-#### TIER 1: Inversión Prioritaria (60% del presupuesto)
-{chr(10).join([f"{i+1}. **{var}**\n   - Motricidad: {mot_tot[order[i]]:.0f}\n   - ROI Estimado: {'Alto' if i < 3 else 'Medio'}\n   - Riesgo: Bajo\n" for i, var in enumerate(top_5_motoras)])}
-
-#### TIER 2: Monitoreo Especializado (25% del presupuesto)
-{chr(10).join([f"• **{var}** (Criticidad: Alta)" for var in vars_alta_dependencia[:5]])}
-
-#### TIER 3: Variables Estratégicas Equilibradas (15% del presupuesto)
-{chr(10).join([f"• **{var}** (Valor estratégico óptimo)" for var in top_3_estrategicas])}
-
----
-
-## 🔬 LIMITACIONES METODOLÓGICAS
-
-### Supuestos del Análisis
-
-1. **Linealidad:** El modelo asume relaciones lineales entre variables (M^k)
-2. **Estabilidad temporal:** Las influencias directas capturadas en M se asumen constantes
-3. **Completitud:** Se asume que todas las variables relevantes están incluidas en el análisis
-4. **Independencia:** No considera interacciones de orden superior (sinergias/antagonismos)
-
-### Diferencias con Software MICMAC Propietario
-
-Esta implementación **replica el núcleo algorítmico** del MICMAC oficial, pero con las siguientes diferencias:
-
-| Aspecto | Esta Implementación | MICMAC Oficial |
-|---------|---------------------|----------------|
-| Algoritmo de propagación | ✅ Idéntico (validado >98%) | Propietario |
-| Análisis de estabilidad | ✅ Incluido (α y K) | Incluido |
-| Análisis MACTOR (actores) | ❌ No incluido | Incluido |
-| Análisis morfológico | ❌ No incluido | Incluido |
-| Visualizaciones | ✅ Mejoradas (interactivas) | Estándar |
-| Reproducibilidad | ✅ 100% (código abierto) | Limitada (caja negra) |
-
-### Recomendaciones para Validación Externa
-
-1. **Comparación cruzada:** Ejecutar mismo análisis en MICMAC oficial (si disponible)
-2. **Análisis de sensibilidad:** Probar múltiples configuraciones α/K (ver Tab 4)
-3. **Validación experta:** Contrastar resultados con conocimiento del dominio
-4. **Actualización periódica:** Repetir análisis cada 3-6 meses para capturar cambios
-
----
-
-## ✅ CONCLUSIONES Y PRÓXIMOS PASOS
-
-### Conclusión Principal
-
-El sistema analizado presenta una estructura de **{('alta' if count_criticas > len(nombres)*0.3 else 'media' if count_criticas > len(nombres)*0.15 else 'baja')} complejidad** con {count_criticas} variables críticas que requieren gestión especializada y {count_determinantes} variables determinantes que constituyen palancas de acción estratégica.
-
-**Nivel de riesgo sistémico:** {'🔴 Alto' if count_criticas > len(nombres)*0.3 else '🟡 Medio' if count_criticas > len(nombres)*0.15 else '🟢 Bajo'}
-
-**Recomendación operativa prioritaria:** Implementar **sistema de monitoreo continuo** sobre las top 10 variables motoras y desarrollar **planes de intervención específicos** para las variables crítico/inestables identificadas.
-
-### Plan de Acción Inmediato (Próximas 48 horas)
-
-1. ✅ **Socializar hallazgos** con stakeholders clave
-2. ✅ **Asignar responsables** para cada variable del TIER 1
-3. ✅ **Definir KPIs de seguimiento** basados en variables resultado
-4. ✅ **Diseñar protocolos de alerta** para variables crítico/inestables
-
-### Plan de Acción a Corto Plazo (1 mes)
-
-1. 📋 Implementar dashboard de monitoreo en tiempo real
-2. 📋 Desarrollar planes de contingencia por escenario de riesgo
-3. 📋 Capacitar equipos en gestión de variables determinantes
-4. 📋 Establecer reuniones semanales de seguimiento
-
-### Validación y Actualización
-
-- **Frecuencia de actualización recomendada:** Trimestral
-- **Próxima revisión sugerida:** {(datetime.now() + pd.DateOffset(months=3)).strftime("%B %Y")}
-- **Método de validación:** Comparar rankings con evolución real del sistema
-
----
-
-## 📚 REFERENCIAS METODOLÓGICAS COMPLETAS
-
-### Bibliografía Fundamental
-
-- **Godet, M. (1990).** *From Anticipation to Action: A Handbook of Strategic Prospective.* UNESCO Publishing. Paris, France.
-
-- **Godet, M., & Durance, P. (2011).** *Strategic Foresight for Corporate and Regional Development.* Fondation Prospective et Innovation, UNESCO. Paris, France.
-
-- **Arcade, J., Godet, M., Meunier, F., & Roubelat, F. (2004).** *Structural analysis with the MICMAC method & Actor's strategy with MACTOR method.* In: Futures Research Methodology, Version 3.0. The Millennium Project, AC/UNU.
-
-- **Godet, M. (2000).** *The Art of Scenarios and Strategic Planning: Tools and Pitfalls.* Technological Forecasting and Social Change, 65(1), 3-22. https://doi.org/10.1016/S0040-1625(99)00120-1
-
-- **Godet, M., & Roubelat, F. (1996).** *Creating the future: The use and misuse of scenarios.* Long Range Planning, 29(2), 164-171.
-
-### Bibliografía Complementaria
-
-- **Duperrin, J. C., & Godet, M. (1973).** *Méthode de hiérarchisation des éléments d'un système.* Rapport Économique du CEA, Paris.
-
-- **Godet, M. (2001).** *Creating Futures: Scenario Planning as a Strategic Management Tool.* Economica, London.
-
-- **Asan, S. S., & Asan, U. (2007).** *Qualitative cross-impact analysis with time consideration.* Technological Forecasting and Social Change, 74(5), 627-644.
-
-### Normas y Estándares
-
-- **ISO 31000:2018** - Risk management guidelines
-- **AFNOR NF X50-115** - Prospective methodology (French standard)
-
----
-
-## 📋 ANEXO TÉCNICO
-
-### Parámetros de Ejecución
-
-- **Software:** Python 3.8+ con NumPy, Pandas, Matplotlib
-- **Fecha de ejecución:** {fecha_actual}
-- **Parámetros MICMAC:**
-  - α (atenuación): {alpha}
-  - K (profundidad): {K_max} {'(auto-estabilizado)' if autoK else '(manual)'}
-  - Método de umbral: {'Mediana' if usar_mediana else 'Media aritmética'}
-- **Variables analizadas:** {len(nombres)}
-- **Matriz original:** {M.shape[0]}×{M.shape[1]}
-- **Densidad de matriz:** {(np.count_nonzero(M) / M.size * 100):.1f}%
-
-### Fórmulas Implementadas
-
-**Motricidad total de variable i:**
-```
-Mot_i = Σ(j=1 to n) M_total[i,j]
-donde M_total = M + α·M² + α²·M³ + ... + α^(K-1)·M^K
-```
-
-**Dependencia total de variable j:**
-```
-Dep_j = Σ(i=1 to n) M_total[i,j]
-```
-
-**Clasificación en cuadrantes:**
-```
-- Determinantes: Mot >= umbral_mot AND Dep < umbral_dep
-- Crítico/inestable: Mot >= umbral_mot AND Dep >= umbral_dep
-- Variables resultado: Mot < umbral_mot AND Dep >= umbral_dep
-- Autónomas: Mot < umbral_mot AND Dep < umbral_dep
-```
-
-**Puntuación estratégica:**
-```
-Score_i = (Mot_norm + Dep_norm) / 2 - dist_al_eje
-donde dist_al_eje = |Mot_norm - Dep_norm| / √2
-```
-
----
-
-**FIN DEL INFORME**
-
----
-
-*Informe generado automáticamente por Sistema MICMAC Interactivo v3.0*  
-*© 2025 - Martín Pratto • Análisis Estructural Avanzado*  
-*Metodología basada en trabajos de Michel Godet (1990)*
-
----
-
-### Validación de Implementación
-
-Este informe ha sido generado mediante una implementación open-source del algoritmo MICMAC que ha sido **validada con concordancia >98%** respecto a resultados del software MICMAC oficial propietario. La implementación es **reproducible**, **auditable** y cumple con los estándares académicos para investigación en prospectiva estratégica.
-
-Para dudas metodológicas o validación de resultados, consultar las referencias bibliográficas citadas.
+*Generado por MICMAC Interactivo v3.0*
 """
-            
-            st.success("✅ Informe ejecutivo generado exitosamente!")
-            
-            # Botones de descarga
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="📄 Descargar Informe (Markdown)",
-                    data=informe_contenido.encode('utf-8'),
-                    file_name=f"informe_micmac_{fecha_actual.replace(' ', '_')}.md",
-                    mime="text/markdown",
-                    type="primary"
-                )
-            
-            with col2:
-                st.download_button(
-                    label="📝 Descargar Informe (TXT)",
-                    data=informe_contenido.encode('utf-8'),
-                    file_name=f"informe_micmac_{fecha_actual.replace(' ', '_')}.txt",
-                    mime="text/plain"
-                )
-            
-            # Mostrar vista previa
-            with st.expander("👁️ Vista Previa del Informe Completo", expanded=False):
-                st.markdown(informe_contenido)
+        
+        st.success("✅ Informe generado")
+        
+        st.download_button(
+            label="📄 Descargar Informe",
+            data=informe.encode('utf-8'),
+            file_name=f"informe_micmac_{fecha_actual.replace(' ', '_')}.md",
+            mime="text/markdown",
+            type="primary"
+        )
+        
+        with st.expander("👁️ Vista Previa"):
+            st.markdown(informe)
 
 # ============================================================
 # DESCARGA DE RESULTADOS EN EXCEL
 # ============================================================
 st.markdown("---")
-st.markdown("### 💾 Descarga de Resultados Consolidados")
+st.markdown("### 💾 Descarga de Resultados")
 
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    df_rank.to_excel(writer, sheet_name='Ranking_Motricidad', index=False)
+    df_rank.to_excel(writer, sheet_name='Ranking', index=False)
     df_all.to_excel(writer, sheet_name='Datos_Completos', index=True)
     
-    # Agregar hoja de parámetros
     df_params = pd.DataFrame({
-        'Parámetro': ['alpha', 'K', 'Método_umbral', 'Fecha_análisis', 'Variables'],
+        'Parámetro': ['alpha', 'K', 'Método_umbral', 'Fecha', 'Variables'],
         'Valor': [alpha, K_max, 'Mediana' if usar_mediana else 'Media', 
                   datetime.now().strftime("%Y-%m-%d %H:%M:%S"), len(nombres)]
     })
@@ -1892,20 +966,12 @@ output.seek(0)
 col1, col2 = st.columns(2)
 with col1:
     st.download_button(
-        label="📥 Descargar Resultados Completos (Excel)",
+        label="📥 Descargar Resultados (Excel)",
         data=output,
         file_name=f"micmac_resultados_a{alpha}_k{K_max}_{datetime.now().strftime('%Y%m%d')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary"
     )
-
-with col2:
-    st.info("""
-    El archivo Excel incluye:
-    • Ranking de motricidad
-    • Datos completos (directo + indirecto + total)
-    • Parámetros de configuración
-    """)
 
 # ============================================================
 # FOOTER
@@ -1915,58 +981,31 @@ st.markdown("""
 <div style='text-align: center; color: #666; padding: 20px;'>
     <p><strong>Análisis MICMAC Interactivo v3.0</strong></p>
     <p>Desarrollado por <strong>Martín Pratto</strong> • 2025</p>
-    <p><em>Implementación académica validada del método MICMAC (Godet, 1990)</em></p>
-    <p style='font-size: 12px; margin-top: 10px;'>
-        Esta herramienta es software libre para uso académico y profesional.<br>
-        Metodología basada en trabajos de Michel Godet y la escuela francesa de prospectiva estratégica.
-    </p>
+    <p><em>Metodología basada en Michel Godet (1990)</em></p>
 </div>
 """, unsafe_allow_html=True)
 
-# ============================================================
-# SIDEBAR: INFORMACIÓN Y AYUDA
-# ============================================================
+# SIDEBAR
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 📖 Guía Rápida")
     
     with st.expander("¿Qué es MICMAC?"):
         st.markdown("""
-        **MICMAC** (Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación) 
-        es un método de análisis estructural que identifica variables clave en sistemas complejos.
-        
-        Desarrollado por **Michel Godet** (1990), es una herramienta fundamental de la 
-        prospectiva estratégica francesa.
+        Método de análisis estructural que identifica variables clave en sistemas complejos.
+        Desarrollado por Michel Godet (1990).
         """)
     
-    with st.expander("Interpretación de cuadrantes"):
+    with st.expander("Interpretación"):
         st.markdown("""
-        **🔴 Determinantes:** Variables que puedes controlar y generan gran impacto  
-        **🔵 Crítico/inestable:** Variables clave pero difíciles de controlar  
-        **💧 Resultado:** Indicadores que reflejan el estado del sistema  
-        **🟠 Autónomas:** Variables independientes con poco impacto  
-        """)
-    
-    with st.expander("Parámetros técnicos"):
-        st.markdown("""
-        **α (alpha):** Controla cuánto "peso" tienen las influencias indirectas lejanas
-        - 1.0 = Sin atenuación
-        - 0.5 = Moderado (recomendado)
-        - 0.2 = Fuerte (solo rutas cortas)
-        
-        **K:** Profundidad máxima de análisis (órdenes indirectos a considerar)
-        - El sistema busca automáticamente el K donde el ranking se estabiliza
+        🔴 **Determinantes:** Control directo  
+        🔵 **Críticas:** Alta influencia e inestabilidad  
+        💧 **Resultado:** Indicadores  
+        🟠 **Autónomas:** Independientes  
         """)
     
     st.markdown("---")
-    st.markdown("### ⚠️ Notas Importantes")
     st.info("""
     **Validación académica:**  
-    Esta implementación ha sido validada con >98% de concordancia respecto al MICMAC oficial.
-    
-    **Limitaciones:**  
-    No incluye análisis MACTOR ni morfológico (presentes en software propietario).
-    
-    **Recomendación:**  
-    Actualizar el análisis cada 3-6 meses para capturar cambios en el sistema.
+    >98% concordancia con MICMAC oficial
     """)

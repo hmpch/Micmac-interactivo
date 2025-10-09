@@ -696,195 +696,180 @@ with tab4:
 with tab5:
         
     # ============================================================
-    # HEATMAP DE MOTRICIDAD Y DEPENDENCIA
-    # ============================================================
-    st.markdown("---")
-    st.markdown("#### 🔥 Heatmap de Motricidad y Dependencia")
-    st.caption("Comparación visual entre valores directos e indirectos")
-    
-    # Selector de tipo de heatmap
-    tipo_heatmap = st.radio(
-        "Selecciona el tipo de heatmap:",
-        options=["📊 Comparación (Directa vs Total)", "🎯 Solo Totales", "🔗 Solo Directas"],
-        index=0,
-        horizontal=True
-    )
-    
-    if tipo_heatmap == "📊 Comparación (Directa vs Total)":
-        # Heatmap comparativo (directa vs total)
-        fig_heat, ax_heat = plt.subplots(figsize=(16, 10))
-        
-        # Crear DataFrame para heatmap
-        df_heatmap = pd.DataFrame({
-            "Motricidad_Directa": mot_dir,
-            "Motricidad_Total": mot_tot,
-            "Dependencia_Directa": dep_dir,
-            "Dependencia_Total": dep_tot
-        }, index=nombres)
-        
-        # Solo mostrar top 20 para mejor legibilidad
-        top_20_idx = order[:20]
-        df_heatmap_top = df_heatmap.iloc[top_20_idx]
-        
-        # Crear heatmap
-        sns.heatmap(
-            df_heatmap_top.T,  # Transponer para que variables sean columnas
-            annot=True,
-            fmt='.0f',
-            cmap='YlOrRd',
-            linewidths=0.5,
-            annot_kws={"size": 8},
-            ax=ax_heat,
-            cbar_kws={'shrink': 0.8}
-        )
-        
-        ax_heat.set_title("HEATMAP: Motricidad y Dependencia (Directa vs Total) - Top 20", 
-                         fontweight='bold', fontsize=14)
-        ax_heat.set_xlabel("Variables (ordenadas por motricidad total)", fontweight='bold')
-        ax_heat.set_ylabel("Métricas", fontweight='bold')
-        
-        # Rotar etiquetas del eje x
-        plt.xticks(rotation=90)
-        plt.tight_layout()
-        
-        st.pyplot(fig_heat)
-        
-    elif tipo_heatmap == "🎯 Solo Totales":
-        # Heatmap solo con valores totales
-        fig_heat2, ax_heat2 = plt.subplots(figsize=(14, 8))
-        
-        df_totales = pd.DataFrame({
-            "Motricidad_Total": mot_tot,
-            "Dependencia_Total": dep_tot
-        }, index=nombres)
-        
-        # Top 25 variables
-        top_25_idx = order[:25]
-        df_totales_top = df_totales.iloc[top_25_idx]
-        
-        sns.heatmap(
-            df_totales_top.T,
-            annot=True,
-            fmt='.0f',
-            cmap='viridis',
-            linewidths=0.5,
-            annot_kws={"size": 9},
-            ax=ax_heat2
-        )
-        
-        ax_heat2.set_title("HEATMAP: Valores Totales - Top 25", fontweight='bold', fontsize=14)
-        ax_heat2.set_xlabel("Variables", fontweight='bold')
-        plt.xticks(rotation=90)
-        plt.tight_layout()
-        
-        st.pyplot(fig_heat2)
-        
-    else:  # Solo Directas
-        # Heatmap solo con valores directos
-        fig_heat3, ax_heat3 = plt.subplots(figsize=(14, 8))
-        
-        df_directas = pd.DataFrame({
-            "Motricidad_Directa": mot_dir,
-            "Dependencia_Directa": dep_dir
-        }, index=nombres)
-        
-        # Top 25 variables por motricidad directa
-        top_25_dir_idx = np.argsort(-mot_dir)[:25]
-        df_directas_top = df_directas.iloc[top_25_dir_idx]
-        
-        sns.heatmap(
-            df_directas_top.T,
-            annot=True,
-            fmt='.0f',
-            cmap='plasma',
-            linewidths=0.5,
-            annot_kws={"size": 9},
-            ax=ax_heat3
-        )
-        
-        ax_heat3.set_title("HEATMAP: Valores Directos - Top 25", fontweight='bold', fontsize=14)
-        ax_heat3.set_xlabel("Variables", fontweight='bold')
-        plt.xticks(rotation=90)
-        plt.tight_layout()
-        
-        st.pyplot(fig_heat3)
-    
-    # Botón de descarga para el heatmap
-    img_heatmap = io.BytesIO()
-    if tipo_heatmap == "📊 Comparación (Directa vs Total)":
-        fig_heat.savefig(img_heatmap, format='png', dpi=300, bbox_inches='tight')
-    elif tipo_heatmap == "🎯 Solo Totales":
-        fig_heat2.savefig(img_heatmap, format='png', dpi=300, bbox_inches='tight')
-    else:
-        fig_heat3.savefig(img_heatmap, format='png', dpi=300, bbox_inches='tight')
-    
-    img_heatmap.seek(0)
-    st.download_button(
-        label="📥 Descargar Heatmap (PNG)",
-        data=img_heatmap,
-        file_name=f"micmac_heatmap_a{alpha}_k{K_max}.png",
-        mime="image/png"
-    )
-    
-    # Interpretación del heatmap
-    with st.expander("ℹ️ Interpretación del Heatmap"):
-        st.markdown("""
-        ### ¿Cómo interpretar el heatmap?
-        
-        **Colores más intensos** = Valores más altos
-        **Colores más claros** = Valores más bajos
-        
-        **Comparación Directa vs Total:**
-        - Permite ver cómo se **amplifica** la influencia con propagación
-        - Variables con gran diferencia → Mayor **efecto indirecto**
-        - Variables similares → Principalmente **efecto directo**
-        
-        **Solo Totales:**
-        - Vista rápida de las variables **más influyentes** del sistema
-        - Útil para identificar **patrones globales**
-        
-        **Solo Directas:**
-        - Influencias **inmediatas** sin propagación
-        - Comparar con totales muestra el **efecto multiplicador**
-        
-        **Recomendación:** Variables con alta motricidad total pero baja directa 
-        son **multiplicadores** que actúan principalmente a través de otras variables.
-        """)
+# HEATMAP MEJORADO Y MÁS CLARO
+# ============================================================
+st.markdown("---")
+st.markdown("#### 🔥 Mapa de Calor - Análisis Comparativo")
+st.caption("Visualización clara de las variables más importantes")
 
-  
-    st.markdown("### 📊 Top 15")
+# Selector mejorado
+vista_heatmap = st.selectbox(
+    "¿Qué quieres visualizar?",
+    options=[
+        "📊 Comparación: Directa vs Total (Top 10)",
+        "🎯 Ranking por Motricidad Total", 
+        "⚖️ Motricidad vs Dependencia"
+    ],
+    index=0
+)
+
+if vista_heatmap == "📊 Comparación: Directa vs Total (Top 10)":
+    # VERSION MEJORADA - Top 10 solamente
+    fig_heat, ax_heat = plt.subplots(figsize=(14, 6))
     
-    fig_bar, ax_bar = plt.subplots(figsize=(14, 8))
+    # Solo top 10 para claridad
+    top_10_idx = order[:10]
+    top_10_names = [nombres[i] for i in top_10_idx]
     
+    # Crear matriz más simple
+    datos_matriz = np.array([
+        mot_dir[top_10_idx],      # Motricidad Directa
+        mot_tot[top_10_idx],      # Motricidad Total
+        dep_dir[top_10_idx],      # Dependencia Directa  
+        dep_tot[top_10_idx]       # Dependencia Total
+    ])
+    
+    # Crear heatmap con etiquetas claras
+    im = ax_heat.imshow(datos_matriz, cmap='YlOrRd', aspect='auto')
+    
+    # Configurar ejes
+    ax_heat.set_xticks(range(len(top_10_names)))
+    ax_heat.set_xticklabels([name[:20] for name in top_10_names], rotation=45, ha='right')
+    
+    ax_heat.set_yticks(range(4))
+    ax_heat.set_yticklabels([
+        'Motricidad\nDirecta', 
+        'Motricidad\nTOTAL',
+        'Dependencia\nDirecta', 
+        'Dependencia\nTOTAL'
+    ], fontsize=11, fontweight='bold')
+    
+    # Agregar valores en cada celda (más legibles)
+    for i in range(4):
+        for j in range(len(top_10_names)):
+            text = ax_heat.text(j, i, f'{datos_matriz[i, j]:.0f}',
+                               ha="center", va="center", color="black",
+                               fontsize=10, fontweight='bold',
+                               bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7))
+    
+    ax_heat.set_title("COMPARACIÓN: Efectos Directos vs Totales (Top 10)", fontweight='bold', fontsize=14)
+    
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax_heat, shrink=0.6)
+    cbar.set_label('Intensidad', fontweight='bold')
+    
+    plt.tight_layout()
+    st.pyplot(fig_heat)
+    
+    # Explicación clara
+    st.markdown("""
+    **¿Cómo leerlo?**
+    - **Fila 1:** Influencia directa (sin propagación)
+    - **Fila 2:** Influencia total (directa + indirecta)
+    - **Fila 3:** Dependencia directa
+    - **Fila 4:** Dependencia total
+    
+    **Colores más rojos** = Mayor intensidad
+    **Comparar filas 1 y 2:** Si la total es mucho mayor → Gran efecto multiplicador
+    """)
+
+elif vista_heatmap == "🎯 Ranking por Motricidad Total":
+    # Heatmap de ranking simple
+    fig_rank, ax_rank = plt.subplots(figsize=(16, 4))
+    
+    # Top 15 variables en una sola fila
     top_15_idx = order[:15]
-    top_15_vars = [nombres[i] for i in top_15_idx]
-    top_15_mot = mot_tot[top_15_idx]
+    top_15_names = [nombres[i] for i in top_15_idx]
+    motricidad_top15 = mot_tot[top_15_idx]
     
-    colors_bar = []
-    for var in top_15_vars:
-        clf = df_all.loc[var, 'Clasificación']
-        if clf == 'Crítico/inestable':
-            colors_bar.append('#1166CC')
-        elif clf == 'Determinantes':
-            colors_bar.append('#FF4444')
-        elif clf == 'Variables resultado':
-            colors_bar.append('#66BBFF')
-        else:
-            colors_bar.append('#FF9944')
+    # Crear matriz de una sola fila
+    datos_rank = motricidad_top15.reshape(1, -1)
     
-    y_pos = np.arange(len(top_15_vars))
-    ax_bar.barh(y_pos, top_15_mot, color=colors_bar, edgecolor='black')
-    ax_bar.set_yticks(y_pos)
-    ax_bar.set_yticklabels(top_15_vars)
-    ax_bar.invert_yaxis()
-    ax_bar.set_xlabel("Motricidad", fontweight='bold')
-    ax_bar.set_title(f"Top 15 (α={alpha}, K={K_max})", fontweight='bold')
-    ax_bar.grid(axis='x', alpha=0.3)
+    # Heatmap
+    im_rank = ax_rank.imshow(datos_rank, cmap='Reds', aspect='auto')
     
-    for i, val in enumerate(top_15_mot):
-        ax_bar.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
+    # Configurar
+    ax_rank.set_xticks(range(len(top_15_names)))
+    ax_rank.set_xticklabels([f"{i+1}. {name[:15]}" for i, name in enumerate(top_15_names)], 
+                           rotation=45, ha='right')
+    ax_rank.set_yticks([0])
+    ax_rank.set_yticklabels(['Motricidad\nTotal'], fontsize=12, fontweight='bold')
     
-    st.pyplot(fig_bar)
+    # Valores en celdas
+    for j in range(len(top_15_names)):
+        text = ax_rank.text(j, 0, f'{motricidad_top15[j]:.0f}',
+                           ha="center", va="center", color="white",
+                           fontsize=11, fontweight='bold')
+    
+    ax_rank.set_title("RANKING: Variables por Motricidad Total", fontweight='bold', fontsize=14)
+    
+    plt.colorbar(im_rank, ax=ax_rank, shrink=0.3)
+    plt.tight_layout()
+    st.pyplot(fig_rank)
+
+else:  # Motricidad vs Dependencia
+    # Matriz 2x2 para top variables
+    fig_comp, ax_comp = plt.subplots(figsize=(12, 8))
+    
+    # Top 12 variables
+    top_12_idx = order[:12]
+    top_12_names = [nombres[i] for i in top_12_idx]
+    
+    # Matriz 2 filas: Motricidad y Dependencia
+    datos_comp = np.array([
+        mot_tot[top_12_idx],  # Motricidad Total
+        dep_tot[top_12_idx]   # Dependencia Total
+    ])
+    
+    # Heatmap
+    im_comp = ax_comp.imshow(datos_comp, cmap='viridis', aspect='auto')
+    
+    # Configurar
+    ax_comp.set_xticks(range(len(top_12_names)))
+    ax_comp.set_xticklabels([name[:18] for name in top_12_names], rotation=45, ha='right')
+    ax_comp.set_yticks([0, 1])
+    ax_comp.set_yticklabels(['MOTRICIDAD\n(Influencia)', 'DEPENDENCIA\n(Vulnerabilidad)'], 
+                           fontsize=12, fontweight='bold')
+    
+    # Valores
+    for i in range(2):
+        for j in range(len(top_12_names)):
+            valor = datos_comp[i, j]
+            color = "white" if valor > np.percentile(datos_comp, 70) else "black"
+            text = ax_comp.text(j, i, f'{valor:.0f}',
+                               ha="center", va="center", color=color,
+                               fontsize=10, fontweight='bold')
+    
+    ax_comp.set_title("MOTRICIDAD vs DEPENDENCIA (Top 12)", fontweight='bold', fontsize=14)
+    
+    plt.colorbar(im_comp, ax=ax_comp, shrink=0.6)
+    plt.tight_layout()
+    st.pyplot(fig_comp)
+    
+    # Interpretación específica
+    st.markdown("""
+    **Interpretación estratégica:**
+    - **Motricidad alta + Dependencia baja** → Variable **Determinante** (fácil de controlar)
+    - **Motricidad alta + Dependencia alta** → Variable **Crítica** (poderosa pero inestable)
+    - **Motricidad baja + Dependencia alta** → Variable **Resultado** (indicador del sistema)
+    """)
+
+# Botón de descarga único
+img_buffer = io.BytesIO()
+if vista_heatmap == "📊 Comparación: Directa vs Total (Top 10)":
+    fig_heat.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+elif vista_heatmap == "🎯 Ranking por Motricidad Total":
+    fig_rank.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+else:
+    fig_comp.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+
+img_buffer.seek(0)
+st.download_button(
+    label="📥 Descargar Mapa de Calor (PNG)",
+    data=img_buffer,
+    file_name=f"heatmap_micmac_{vista_heatmap[:10]}_{alpha}_{K_max}.png",
+    mime="image/png"
+)
 
     # ============================================================
     # GRÁFICO DE INFLUENCIAS INDIRECTAS (GRAFO DE RED)

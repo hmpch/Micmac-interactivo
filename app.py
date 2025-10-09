@@ -96,18 +96,66 @@ with st.expander("📚 Referencias Bibliográficas", expanded=False):
 def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     Convierte un DataFrame en matriz cuadrada usando la intersección de filas/columnas.
-    Fuerza valores numéricos y convierte NaN a 0.
+    Versión mejorada con validaciones y warnings.
     """
+    # PASO 1: Reporte de valores no numéricos ANTES de convertir
+    valores_problematicos = []
+    for col in df.columns:
+        for idx in df.index:
+            val = df.loc[idx, col]
+            if pd.isna(val):
+                valores_problematicos.append(f"{idx} → {col}: vacío")
+            elif not isinstance(val, (int, float, np.number)):
+                valores_problematicos.append(f"{idx} → {col}: '{val}'")
+    
+    if valores_problematicos:
+        st.warning(f"⚠️ Se detectaron {len(valores_problematicos)} celdas con valores no numéricos que se convertirán a CERO:")
+        with st.expander("Ver detalles de valores convertidos"):
+            for vp in valores_problematicos[:50]:
+                st.write(f"• {vp}")
+            if len(valores_problematicos) > 50:
+                st.write(f"... y {len(valores_problematicos) - 50} más")
+    
+    # PASO 2: Conversión a numérico
     df = df.apply(pd.to_numeric, errors='coerce').fillna(0.0)
+    
+    # PASO 3: Intersección de filas y columnas
     common = df.index.intersection(df.columns)
     if len(common) < 3:
         raise ValueError(
             "No se encuentra suficiente intersección entre filas y columnas "
-            "para formar una matriz cuadrada. Verifica el formato del archivo."
+            f"para formar una matriz cuadrada. Solo {len(common)} variables en común."
         )
+    
+    # Verificar si hay variables que se perdieron
+    vars_perdidas_filas = set(df.index) - set(common)
+    vars_perdidas_cols = set(df.columns) - set(common)
+    
+    if vars_perdidas_filas:
+        st.warning(f"⚠️ {len(vars_perdidas_filas)} variables en FILAS no tienen columna correspondiente (se excluyen):")
+        st.write(", ".join(list(vars_perdidas_filas)[:10]))
+    
+    if vars_perdidas_cols:
+        st.warning(f"⚠️ {len(vars_perdidas_cols)} variables en COLUMNAS no tienen fila correspondiente (se excluyen):")
+        st.write(", ".join(list(vars_perdidas_cols)[:10]))
+    
     df = df.loc[common, common].copy()
-    # Forzar diagonal a 0 (una variable no se influye a sí misma)
+    
+    # PASO 4: Forzar diagonal a 0
     np.fill_diagonal(df.values, 0.0)
+    
+    # PASO 5: Verificar filas y columnas en cero
+    filas_cero = (df.sum(axis=1) == 0).sum()
+    cols_cero = (df.sum(axis=0) == 0).sum()
+    
+    if filas_cero > 0:
+        st.warning(f"⚠️ **{filas_cero} variables tienen MOTRICIDAD = 0** (fila completa en ceros)")
+        st.info("Estas variables no influyen sobre ninguna otra en la matriz de entrada.")
+    
+    if cols_cero > 0:
+        st.warning(f"⚠️ **{cols_cero} variables tienen DEPENDENCIA = 0** (columna completa en ceros)")
+        st.info("Estas variables no reciben influencia de ninguna otra en la matriz de entrada.")
+    
     return df
 
 

@@ -1268,16 +1268,16 @@ Variables Más Estratégicas:
                     ax_mapa_pdf = fig_mapa_pdf.add_subplot(111)
                     
                     # Recrear mapa MICMAC
-                    sc = ax_mapa_pdf.scatter(X, Y, c=colors, s=120, alpha=0.85, edgecolors='black', linewidth=1.0)
+                    sc = ax_mapa_pdf.scatter(mot_tot, dep_tot, c=colors, s=120, alpha=0.85, edgecolors='black', linewidth=1.0)
                     ax_mapa_pdf.axvline(ref_x, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
                     ax_mapa_pdf.axhline(ref_y, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
-                    
+
                     # Etiquetas (solo top variables)
-                    top_indices_pdf = np.argsort(-X)[:15]  # Top 15
-                    texts_pdf = []
+                    top_indices_pdf = np.argsort(-mot_tot)[:15]  # Top 15
                     for i in top_indices_pdf:
-                        texts_pdf.append(ax_mapa_pdf.text(X[i], Y[i], f" {nombres[i][:15]}", fontsize=8))
+                      ax_mapa_pdf.text(mot_tot[i], dep_tot[i], f" {nombres[i][:15]}", fontsize=8)
                     
+                                        
                     ax_mapa_pdf.set_xlabel("Motricidad (Total)", fontweight='bold', fontsize=12)
                     ax_mapa_pdf.set_ylabel("Dependencia (Total)", fontweight='bold', fontsize=12)
                     ax_mapa_pdf.set_title(f"MAPA MICMAC TOTAL — α={alpha}, K={K_max}", fontweight='bold', fontsize=14)

@@ -1071,42 +1071,362 @@ else:
 
 # TAB 6
 with tab6:
-    st.markdown("### 📄 Informe")
-    
-    if st.button("📝 Generar"):
-        fecha = datetime.now().strftime("%d/%m/%Y")
+    # ============================================================
+# GENERADOR DE INFORME DE INTELIGENCIA CON PDF COMPLETO
+# ============================================================
+
+st.markdown("---")
+st.markdown("### 📄 Generador de Informe de Inteligencia")
+st.caption("Crea un informe PDF profesional con todos los gráficos y análisis")
+
+if st.button("🎯 Generar Informe Completo (PDF)", type="primary"):
+    with st.spinner("Generando informe PDF con todos los gráficos... Por favor espera."):
         
-        top_5 = ranking_vars[:5]
-        count_det = len(df_all[df_all['Clasificación'] == 'Determinantes'])
-        count_cri = len(df_all[df_all['Clasificación'] == 'Crítico/inestable'])
-        count_res = len(df_all[df_all['Clasificación'] == 'Variables resultado'])
-        count_aut = len(df_all[df_all['Clasificación'] == 'Autónomas'])
+        # Importar PdfPages para PDF multipágina
+        from matplotlib.backends.backend_pdf import PdfPages
+        import tempfile
         
-        informe = f"""# INFORME MICMAC
-
-**Fecha:** {fecha}  
-**Parámetros:** α={alpha}, K={K_max}
-
-## RESUMEN
-
-- {count_cri} variables críticas
-- {count_det} determinantes
-- {count_res} resultado
-- {count_aut} autónomas
-
-## TOP 5
-
-{chr(10).join([f"{i+1}. {var}" for i, var in enumerate(top_5)])}
-
----
-*MICMAC Interactivo v3.5*
-"""
+        # Análisis automático de resultados
+        top_5_motoras = ranking_vars[:5]
+        top_3_estrategicas = [nombres[i] for i in np.argsort(strategic_scores)[-3:]][::-1]
         
-        st.download_button("📄 Descargar", informe.encode('utf-8'), 
-                          f"informe_{fecha.replace('/', '')}.md", "text/markdown")
+        # Contar variables por cuadrante
+        count_determinantes = sum(1 for label in labels_cuadrante if label == 'Determinantes')
+        count_criticas = sum(1 for label in labels_cuadrante if label == 'Crítico/inestable')
+        count_resultado = sum(1 for label in labels_cuadrante if label == 'Variables resultado')
+        count_autonomas = sum(1 for label in labels_cuadrante if label == 'Autónomas')
         
-        with st.expander("Vista previa"):
-            st.markdown(informe)
+        # Variables críticas por motricidad
+        vars_alta_motricidad = [nombres[i] for i in range(len(nombres)) if mot_tot[i] > np.percentile(mot_tot, 90)]
+        vars_alta_dependencia = [nombres[i] for i in range(len(nombres)) if dep_tot[i] > np.percentile(dep_tot, 90)]
+        
+        # Crear archivo temporal para PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            with PdfPages(tmp_file.name) as pdf:
+                
+                # ========================================
+                # PÁGINA 1: PORTADA DEL INFORME
+                # ========================================
+                fig_portada = plt.figure(figsize=(8.5, 11))
+                ax_portada = fig_portada.add_subplot(111)
+                ax_portada.axis('off')
+                
+                # Título principal
+                ax_portada.text(0.5, 0.85, 'INFORME DE INTELIGENCIA ESTRATÉGICA', 
+                               fontsize=24, fontweight='bold', ha='center', va='center',
+                               bbox=dict(boxstyle="round,pad=1", facecolor="lightblue", alpha=0.8))
+                
+                # Subtítulo
+                ax_portada.text(0.5, 0.78, 'Análisis Estructural MICMAC', 
+                               fontsize=18, ha='center', va='center')
+                
+                # Información del análisis
+                fecha_actual = datetime.now().strftime("%d de %B de %Y")
+                info_text = f"""
+                Sistema Analizado: {len(nombres)} Variables
+                Parámetros: α={alpha}, K={K_max}
+                Fecha de Análisis: {fecha_actual}
+                
+                Generado por: Sistema MICMAC Interactivo v3.5
+                Desarrollado por: Martín Pratto
+                """
+                ax_portada.text(0.5, 0.5, info_text, fontsize=12, ha='center', va='center',
+                               bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.7))
+                
+                # Resumen ejecutivo
+                resumen = f"""
+                HALLAZGOS PRINCIPALES:
+                
+                • {count_criticas} Variables Críticas/Inestables ({count_criticas/len(nombres)*100:.1f}%)
+                • {count_determinantes} Variables Determinantes ({count_determinantes/len(nombres)*100:.1f}%)
+                • {count_resultado} Variables Resultado ({count_resultado/len(nombres)*100:.1f}%)
+                
+                Variables Más Estratégicas:
+                1. {top_3_estrategicas[0]}
+                2. {top_3_estrategicas[1]}
+                3. {top_3_estrategicas[2]}
+                """
+                ax_portada.text(0.5, 0.2, resumen, fontsize=11, ha='center', va='center',
+                               bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgreen", alpha=0.7))
+                
+                pdf.savefig(fig_portada, bbox_inches='tight')
+                plt.close(fig_portada)
+                
+                # ========================================
+                # PÁGINA 2: MAPA MICMAC (TOTAL)
+                # ========================================
+                fig_mapa_pdf = plt.figure(figsize=(12, 9))
+                ax_mapa_pdf = fig_mapa_pdf.add_subplot(111)
+                
+                # Recrear mapa MICMAC
+                sc = ax_mapa_pdf.scatter(X, Y, c=colors, s=120, alpha=0.85, edgecolors='black', linewidth=1.0)
+                ax_mapa_pdf.axvline(ref_x, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
+                ax_mapa_pdf.axhline(ref_y, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
+                
+                # Etiquetas (solo top variables)
+                top_indices_pdf = np.argsort(-X)[:15]  # Top 15
+                texts_pdf = []
+                for i in top_indices_pdf:
+                    texts_pdf.append(ax_mapa_pdf.text(X[i], Y[i], f" {nombres[i][:15]}", fontsize=8))
+                
+                ax_mapa_pdf.set_xlabel("Motricidad (Total)", fontweight='bold', fontsize=12)
+                ax_mapa_pdf.set_ylabel("Dependencia (Total)", fontweight='bold', fontsize=12)
+                ax_mapa_pdf.set_title(f"MAPA MICMAC TOTAL — α={alpha}, K={K_max}", fontweight='bold', fontsize=14)
+                
+                # Leyenda
+                handles_pdf = [
+                    plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Determinantes"], markersize=10, label='Determinantes'),
+                    plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Crítico/inestable"], markersize=10, label='Crítico/inestable'),
+                    plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Variables resultado"], markersize=10, label='Variables resultado'),
+                    plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Autónomas"], markersize=10, label='Autónomas'),
+                ]
+                ax_mapa_pdf.legend(handles=handles_pdf, loc='upper left', frameon=True)
+                ax_mapa_pdf.grid(True, alpha=0.25)
+                
+                pdf.savefig(fig_mapa_pdf, bbox_inches='tight')
+                plt.close(fig_mapa_pdf)
+                
+                # ========================================
+                # PÁGINA 3: EJE DE ESTRATEGIA
+                # ========================================
+                fig_eje_pdf = plt.figure(figsize=(11, 9))
+                ax_eje_pdf = fig_eje_pdf.add_subplot(111)
+                
+                # Recrear eje de estrategia
+                ax_eje_pdf.scatter(X, Y, c=col_est, s=sizes_est, alpha=0.85, edgecolors='black', linewidth=1.0)
+                ax_eje_pdf.plot([0, X.max()], [0, Y.max()], 'r--', lw=2, label='Eje de estrategia')
+                
+                # Etiquetas top estratégicas
+                idx_top_est_pdf = np.argsort(strategic_scores)[-10:]  # Top 10 estratégicas
+                for i in idx_top_est_pdf:
+                    ax_eje_pdf.text(X[i], Y[i], f" {nombres[i][:15]}", fontsize=8)
+                
+                ax_eje_pdf.set_xlabel("Motricidad (Total)", fontweight='bold', fontsize=12)
+                ax_eje_pdf.set_ylabel("Dependencia (Total)", fontweight='bold', fontsize=12)
+                ax_eje_pdf.set_title("EJE DE ESTRATEGIA", fontweight='bold', fontsize=14)
+                ax_eje_pdf.legend(loc='upper left')
+                ax_eje_pdf.grid(True, alpha=0.25)
+                
+                pdf.savefig(fig_eje_pdf, bbox_inches='tight')
+                plt.close(fig_eje_pdf)
+                
+                # ========================================
+                # PÁGINA 4: RANKING DE VARIABLES (BARRAS)
+                # ========================================
+                fig_barras_pdf = plt.figure(figsize=(14, 10))
+                ax_barras_pdf = fig_barras_pdf.add_subplot(111)
+                
+                # Top 20 variables
+                df_top20 = df_rank.head(20)
+                bars = ax_barras_pdf.barh(range(len(df_top20)), df_top20["Motricidad_total"], color='steelblue', alpha=0.8)
+                ax_barras_pdf.set_yticks(range(len(df_top20)))
+                ax_barras_pdf.set_yticklabels(df_top20["Variable"], fontsize=10)
+                ax_barras_pdf.set_xlabel("Motricidad Total", fontweight='bold', fontsize=12)
+                ax_barras_pdf.set_title("TOP 20 VARIABLES POR MOTRICIDAD TOTAL", fontweight='bold', fontsize=14)
+                ax_barras_pdf.grid(True, alpha=0.25, axis='x')
+                
+                # Invertir orden para que el top esté arriba
+                ax_barras_pdf.invert_yaxis()
+                
+                pdf.savefig(fig_barras_pdf, bbox_inches='tight')
+                plt.close(fig_barras_pdf)
+                
+                # ========================================
+                # PÁGINA 5: GRAFO DE RED (si existe)
+                # ========================================
+                if 'G' in locals() and G.number_of_edges() > 0:
+                    fig_grafo_pdf = plt.figure(figsize=(16, 12))
+                    ax_grafo_pdf = fig_grafo_pdf.add_subplot(111)
+                    
+                    # Recrear layout del grafo
+                    pos_pdf = nx.spring_layout(G, k=5.0, iterations=100, seed=42)
+                    expansion_pdf = 1.2
+                    pos_pdf = {node: (x * expansion_pdf, y * expansion_pdf) for node, (x, y) in pos_pdf.items()}
+                    
+                    # Colores de nodos
+                    node_colors_pdf = []
+                    node_sizes_pdf = []
+                    for node in G.nodes():
+                        clasificacion = G.nodes[node]['clasificacion']
+                        motricidad_node = G.nodes[node]['motricidad']
+                        
+                        if clasificacion == 'Crítico/inestable':
+                            node_colors_pdf.append('#1166CC')
+                        elif clasificacion == 'Determinantes':
+                            node_colors_pdf.append('#FF4444')
+                        elif clasificacion == 'Variables resultado':
+                            node_colors_pdf.append('#66BBFF')
+                        else:
+                            node_colors_pdf.append('#FF9944')
+                        
+                        node_sizes_pdf.append(100 + motricidad_node * 2)
+                    
+                    # Dibujar aristas por categoría
+                    for cat in ['muy_debil', 'debil', 'media', 'importante', 'muy_importante']:
+                        if cat in categorias_aristas and categorias_aristas[cat]['edges']:
+                            nx.draw_networkx_edges(
+                                G, pos_pdf,
+                                edgelist=categorias_aristas[cat]['edges'],
+                                edge_color=categorias_aristas[cat]['color'],
+                                width=categorias_aristas[cat]['ancho'],
+                                alpha=categorias_aristas[cat]['alpha'],
+                                arrows=True,
+                                arrowsize=10,
+                                ax=ax_grafo_pdf
+                            )
+                    
+                    # Dibujar nodos
+                    nx.draw_networkx_nodes(
+                        G, pos_pdf,
+                        node_color=node_colors_pdf,
+                        node_size=node_sizes_pdf,
+                        alpha=0.8,
+                        edgecolors='black',
+                        linewidths=1,
+                        ax=ax_grafo_pdf
+                    )
+                    
+                    # Etiquetas
+                    labels_pdf = {node: node[:12] for node in G.nodes()}
+                    nx.draw_networkx_labels(G, pos_pdf, labels_pdf, font_size=7, ax=ax_grafo_pdf)
+                    
+                    ax_grafo_pdf.set_title(f"GRAFO DE INFLUENCIAS INDIRECTAS\nNodos: {G.number_of_nodes()} | Conexiones: {G.number_of_edges()}", 
+                                          fontweight='bold', fontsize=14)
+                    ax_grafo_pdf.axis('off')
+                    
+                    pdf.savefig(fig_grafo_pdf, bbox_inches='tight')
+                    plt.close(fig_grafo_pdf)
+                
+                # ========================================
+                # PÁGINA 6: ANÁLISIS TEXTUAL
+                # ========================================
+                fig_texto = plt.figure(figsize=(8.5, 11))
+                ax_texto = fig_texto.add_subplot(111)
+                ax_texto.axis('off')
+                
+                informe_texto = f"""
+ANÁLISIS DE VARIABLES MOTORAS
+
+Top 5 Variables con Mayor Influencia Sistémica:
+1. {top_5_motoras[0]} - Motricidad: {mot_tot[order[0]]:.0f}
+2. {top_5_motoras[1]} - Motricidad: {mot_tot[order[1]]:.0f}
+3. {top_5_motoras[2]} - Motricidad: {mot_tot[order[2]]:.0f}
+4. {top_5_motoras[3]} - Motricidad: {mot_tot[order[3]]:.0f}
+5. {top_5_motoras[4]} - Motricidad: {mot_tot[order[4]]:.0f}
+
+CLASIFICACIÓN SISTÉMICA
+
+• Variables Críticas/Inestables: {count_criticas} ({count_criticas/len(nombres)*100:.1f}%)
+• Variables Determinantes: {count_determinantes} ({count_determinantes/len(nombres)*100:.1f}%)
+• Variables Resultado: {count_resultado} ({count_resultado/len(nombres)*100:.1f}%)
+• Variables Autónomas: {count_autonomas} ({count_autonomas/len(nombres)*100:.1f}%)
+
+RECOMENDACIONES ESTRATÉGICAS
+
+PRIORIDAD ALTA - Acción Inmediata:
+1. Focalizar recursos en las {count_determinantes} variables determinantes
+2. Gestión de variables críticas que pueden generar efectos impredecibles
+
+PRIORIDAD MEDIA - Planificación Táctica:
+3. Monitoreo de variables resultado como sistema de alerta
+4. Optimización del eje estratégico
+
+INDICADORES CLAVE:
+• Motricidad Concentrada: {(mot_tot[order[0]]/mot_tot.sum()*100):.2f}%
+• Ratio Variables Críticas: {count_criticas/len(nombres):.3f}
+• Dependencia Media: {dep_tot.mean():.2f}
+
+METODOLOGÍA APLICADA:
+• Algoritmo: MICMAC extendido con parámetros α={alpha}, K={K_max}
+• Variables analizadas: {len(nombres)}
+• Fecha de análisis: {fecha_actual}
+                """
+                
+                ax_texto.text(0.05, 0.95, informe_texto, fontsize=10, ha='left', va='top',
+                             transform=ax_texto.transAxes, fontfamily='monospace')
+                
+                pdf.savefig(fig_texto, bbox_inches='tight')
+                plt.close(fig_texto)
+                
+                # ========================================
+                # PÁGINA 7: TABLAS DE DATOS
+                # ========================================
+                fig_tabla = plt.figure(figsize=(11, 8.5))
+                ax_tabla = fig_tabla.add_subplot(111)
+                ax_tabla.axis('off')
+                
+                # Crear tabla con top 15 variables
+                tabla_data = []
+                for i in range(15):
+                    idx = order[i]
+                    tabla_data.append([
+                        i + 1,
+                        nombres[idx][:25],
+                        f"{mot_tot[idx]:.0f}",
+                        f"{dep_tot[idx]:.0f}",
+                        labels_cuadrante[idx]
+                    ])
+                
+                # Crear tabla
+                tabla = ax_tabla.table(
+                    cellText=tabla_data,
+                    colLabels=['Pos', 'Variable', 'Motricidad', 'Dependencia', 'Clasificación'],
+                    cellLoc='left',
+                    loc='center',
+                    colWidths=[0.08, 0.45, 0.15, 0.15, 0.17]
+                )
+                tabla.auto_set_font_size(False)
+                tabla.set_fontsize(9)
+                tabla.scale(1, 1.5)
+                
+                # Colorear encabezados
+                for i in range(5):
+                    tabla[(0, i)].set_facecolor('#4CAF50')
+                    tabla[(0, i)].set_text_props(weight='bold', color='white')
+                
+                # Colorear filas alternadas
+                for i in range(1, len(tabla_data) + 1):
+                    for j in range(5):
+                        if i % 2 == 0:
+                            tabla[(i, j)].set_facecolor('#f0f0f0')
+                
+                ax_tabla.set_title('RANKING DETALLADO - TOP 15 VARIABLES', fontweight='bold', fontsize=14, pad=20)
+                
+                pdf.savefig(fig_tabla, bbox_inches='tight')
+                plt.close(fig_tabla)
+            
+            # Leer el PDF generado
+            with open(tmp_file.name, 'rb') as f:
+                pdf_data = f.read()
+        
+        st.success("✅ ¡Informe PDF generado exitosamente!")
+        st.info(f"📄 El informe contiene {6 + ('1' if 'G' in locals() and G.number_of_edges() > 0 else '0')} páginas con análisis completo y gráficos.")
+        
+        # Botón de descarga del PDF
+        st.download_button(
+            label="📥 DESCARGAR INFORME COMPLETO (PDF)",
+            data=pdf_data,
+            file_name=f"informe_micmac_completo_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
+        
+        # Vista previa del contenido
+        with st.expander("👁️ Vista Previa del Contenido del Informe PDF"):
+            st.markdown("""
+            **Página 1:** Portada con resumen ejecutivo  
+            **Página 2:** Mapa MICMAC Total con clasificación por cuadrantes  
+            **Página 3:** Gráfico del Eje de Estrategia  
+            **Página 4:** Ranking de variables (gráfico de barras horizontal)  
+            **Página 5:** Grafo de influencias indirectas (si aplica)  
+            **Página 6:** Análisis textual detallado  
+            **Página 7:** Tabla con ranking detallado top 15 variables  
+            
+            ✅ **Incluye:** Todos los gráficos generados en la sesión  
+            ✅ **Formato:** PDF profesional listo para presentación  
+            ✅ **Contenido:** Análisis completo con recomendaciones estratégicas  
+            """)
+
 
 # ============================================================
 # DESCARGA EXCEL

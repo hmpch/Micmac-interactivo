@@ -869,7 +869,7 @@ else:
             node_colors.append('#FF9944')
         
         # Tamaño proporcional a motricidad indirecta
-        node_sizes.append(300 + motricidad * 10)
+        node_sizes.append(100 + motricidad * 10)
     
     # Dibujar aristas por categoría
     categorias_aristas = {

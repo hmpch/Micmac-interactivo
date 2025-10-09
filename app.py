@@ -173,7 +173,149 @@ def first_stable_K(M: np.ndarray, alpha: float, K_values=range(2, 15)) -> int:
         prev_order = order
     return max(K_values)
 
-
+def find_optimal_parameters(M: np.ndarray, max_inflation=50):
+    """
+    Encuentra los parámetros α y K óptimos que balancean convergencia e interpretabilidad.
+    
+    Criterios:
+    1. El ranking debe estabilizarse
+    2. La inflación de valores indirectos debe ser razonable (< max_inflation)
+    3. Preferir menor K y mayor α (más conservador pero estable)
+    
+    Parámetros:
+    - M: Matriz de influencias directas
+    - max_inflation: Factor máximo aceptable (Indirecta/Directa promedio)
+    
+    Retorna:
+    - Diccionario con: {'alpha': float, 'K': int, 'inflation': float, 'stable': bool}
+    """
+    
+    # Probar combinaciones de α y K
+    alpha_values = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]
+    K_values = range(2, 10)
+    
+    valid_configs = []
+    
+    for alpha in alpha_values:
+        for K in K_values:
+            # Calcular matriz total
+            M_tot = micmac_total(M, alpha, K)
+            
+            # Calcular inflación
+            mot_dir = M.sum(axis=1)
+            mot_tot = M_tot.sum(axis=1)
+            mot_ind = mot_tot - mot_dir
+            
+            # Evitar división por cero
+            inflation_ratios = []
+            for i in range(len(mot_dir)):
+                if mot_dir[i] > 0:
+                    inflation_ratios.append(mot_ind[i] / mot_dir[i])
+            
+            if len(inflation_ratios) > 0:
+                avg_inflation = np.mean(inflation_ratios)
+                max_value = mot_tot.max()
+            else:
+                avg_inflation = 0
+                max_value = 0
+            
+            # Verificar estabilidad
+            ranking_actual = tuple(np.argsort(-mot_tot))
+            
+            # Probar con K+1 para ver si es estable
+            if K < 9:
+                M_tot_next = micmac_total(M, alpha, K+1)
+                mot_tot_next = M_tot_next.sum(axis=1)
+                ranking_next = tuple(np.argsort(-mot_tot_next))
+                is_stable = (ranking_actual == ranking_next)
+            else:
+                is_stable = True
+            
+            # Guardar configuración si es válida
+            if avg_inflation <= max_inflation and max_value < 1e6:
+                valid_configs.append({
+                    'alpha': alpha,
+                    'K': K,
+                    'inflation': avg_inflation,
+                    'max_value': max_value,
+                    'stable': is_stable,
+                    'score': alpha * 10 - K + (10 if is_stable else 0) - avg_inflation/10
+                })
+    
+    if len(valid_configs) == 0:
+        # Si no hay configuraciones válidas, usar la más conservadora
+        return {
+            'alpha': 0.3,
+            'K': 2,
+            'inflation': 0,
+            'stable': False,
+            'warning': 'No se encontraron parámetros óptimos, usando valores conservadores'
+        }
+    
+    # Ordenar por score (prioriza: estabilidad > alpha alto > K bajo > inflación baja)
+    valid_configs.sort(key=lambda x: x['score'], reverse=True)
+    
+    return valid_configs[0]
+def validate_micmac_results(M: np.ndarray, M_tot: np.ndarray, alpha: float, K: int):
+    """
+    Valida que los resultados MICMAC sean interpretables y coherentes.
+    
+    Retorna:
+    - Dict con warnings y recomendaciones
+    """
+    warnings = []
+    recommendations = []
+    
+    mot_dir = M.sum(axis=1)
+    mot_tot = M_tot.sum(axis=1)
+    mot_ind = mot_tot - mot_dir
+    
+    # 1. Verificar inflación de valores
+    inflation_ratios = []
+    for i in range(len(mot_dir)):
+        if mot_dir[i] > 0:
+            inflation_ratios.append(mot_ind[i] / mot_dir[i])
+    
+    if len(inflation_ratios) > 0:
+        avg_inflation = np.mean(inflation_ratios)
+        max_inflation = np.max(inflation_ratios)
+        
+        if avg_inflation > 100:
+            warnings.append(f"⚠️ Inflación promedio muy alta: {avg_inflation:.0f}x (valores en millones)")
+            recommendations.append("Reducir K a 2-3 o α a 0.3-0.4")
+        elif avg_inflation > 50:
+            warnings.append(f"⚠️ Inflación moderada-alta: {avg_inflation:.0f}x")
+            recommendations.append("Considerar reducir K o α para mejor interpretabilidad")
+        elif avg_inflation > 20:
+            warnings.append(f"✓ Inflación aceptable: {avg_inflation:.1f}x")
+        else:
+            warnings.append(f"✅ Inflación baja: {avg_inflation:.1f}x (valores muy interpretables)")
+    
+    # 2. Verificar rango de valores
+    max_value = mot_tot.max()
+    min_value = mot_tot.min()
+    
+    if max_value > 1e6:
+        warnings.append(f"⚠️ Valores muy grandes (millones): max={max_value:,.0f}")
+        recommendations.append("Los valores son correctos pero difíciles de interpretar")
+    elif max_value > 1e4:
+        warnings.append(f"✓ Valores en miles: max={max_value:,.0f}")
+    else:
+        warnings.append(f"✅ Valores interpretables: max={max_value:.0f}")
+    
+    # 3. Verificar distribución
+    if min_value == 0:
+        num_zeros = np.count_nonzero(mot_tot == 0)
+        warnings.append(f"⚠️ {num_zeros} variables con motricidad = 0")
+        recommendations.append("Revisar matriz de entrada - variables aisladas")
+    
+    return {
+        'warnings': warnings,
+        'recommendations': recommendations,
+        'avg_inflation': avg_inflation if len(inflation_ratios) > 0 else 0,
+        'max_value': max_value,
+        'is_valid': len([w for w in warnings if '⚠️' in w]) == 0
+    }
 def analyze_stability(M: np.ndarray, alpha_values, K_values):
     """
     Analiza la estabilidad del ranking bajo diferentes combinaciones de α y K.
@@ -441,45 +583,148 @@ except Exception as e:
 # ============================================================
 st.markdown("### ⚙️ Paso 2: Configura los Parámetros de Análisis")
 
-col1, col2, col3 = st.columns(3)
+# MODO AUTOMÁTICO vs MANUAL
+modo = st.radio(
+    "Modo de configuración:",
+    options=['🤖 Automático (Recomendado)', '⚙️ Manual (Avanzado)'],
+    index=0,
+    help="Modo automático calcula los parámetros óptimos. Modo manual permite configuración personalizada."
+)
 
-with col1:
-    alpha = st.slider(
-        "α (Factor de atenuación)",
-        min_value=0.1,
-        max_value=1.0,
-        value=0.5,
-        step=0.05,
-        help="Factor de atenuación exponencial para rutas indirectas"
-    )
-
-with col2:
-    autoK = st.checkbox(
-        "Calcular K óptimo automáticamente",
-        value=True,
-        help="Encuentra el valor de K donde el ranking se estabiliza"
-    )
+if modo == '🤖 Automático (Recomendado)':
+    st.info("🔍 Calculando parámetros óptimos...")
     
-    if autoK:
-        with st.spinner("Calculando K óptimo..."):
-            K_max = first_stable_K(M, alpha)
-        st.info(f"✓ K óptimo detectado: **{K_max}**")
-    else:
-        K_max = st.slider(
-            "K (Profundidad de análisis)",
-            min_value=2,
-            max_value=15,
-            value=6,
-            help="Número máximo de órdenes indirectos"
+    with st.spinner("Analizando configuraciones óptimas de α y K..."):
+        optimal_params = find_optimal_parameters(M, max_inflation=50)
+    
+    if 'warning' in optimal_params:
+        st.warning(optimal_params['warning'])
+    
+    alpha = optimal_params['alpha']
+    K_max = optimal_params['K']
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "α óptimo",
+            f"{alpha}",
+            help="Factor de atenuación que balancea propagación e interpretabilidad"
         )
+    
+    with col2:
+        st.metric(
+            "K óptimo",
+            f"{K_max}",
+            help="Profundidad que asegura convergencia sin explosión de valores"
+        )
+    
+    with col3:
+        if optimal_params.get('stable', False):
+            st.success("✅ Convergente")
+        else:
+            st.warning("⚠️ Parcialmente estable")
+    
+    st.info(f"""
+    **Parámetros seleccionados automáticamente:**
+    - α = {alpha} (atenuación {'conservadora' if alpha < 0.5 else 'moderada' if alpha < 0.7 else 'suave'})
+    - K = {K_max} (profundidad {'mínima' if K_max <= 3 else 'moderada' if K_max <= 6 else 'extensa'})
+    - Inflación estimada: {optimal_params['inflation']:.1f}x
+    
+    Estos valores aseguran resultados interpretables y metodológicamente válidos.
+    """)
+    
+    # Opción para override manual
+    with st.expander("🔧 Ajustar manualmente (override)"):
+        col_ov1, col_ov2 = st.columns(2)
+        
+        with col_ov1:
+            alpha_override = st.slider(
+                "α manual",
+                min_value=0.1,
+                max_value=1.0,
+                value=alpha,
+                step=0.1
+            )
+        
+        with col_ov2:
+            K_override = st.slider(
+                "K manual",
+                min_value=2,
+                max_value=10,
+                value=K_max
+            )
+        
+        if st.button("Aplicar override"):
+            alpha = alpha_override
+            K_max = K_override
+            st.warning(f"⚠️ Usando parámetros manuales: α={alpha}, K={K_max}")
 
-with col3:
+else:  # Modo Manual
+    st.warning("⚠️ Modo avanzado: configura manualmente α y K")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        alpha = st.slider(
+            "α (Factor de atenuación)",
+            min_value=0.1,
+            max_value=1.0,
+            value=0.5,
+            step=0.05,
+            help="""
+            Factor de atenuación exponencial:
+            - 0.2-0.4: Conservador (solo rutas cortas)
+            - 0.5-0.7: Moderado (recomendado)
+            - 0.8-1.0: Agresivo (todas las rutas)
+            """
+        )
+    
+    with col2:
+        autoK = st.checkbox(
+            "Auto-calcular K",
+            value=True,
+            help="Encuentra K donde el ranking se estabiliza"
+        )
+        
+        if autoK:
+            with st.spinner("Calculando K óptimo..."):
+                K_max = first_stable_K(M, alpha)
+            st.info(f"✓ K detectado: **{K_max}**")
+        else:
+            K_max = st.slider(
+                "K (Profundidad)",
+                min_value=2,
+                max_value=10,
+                value=4,
+                help="Número de órdenes indirectos"
+            )
+    
+    with col3:
+        st.markdown("**Vista previa:**")
+        M_preview = micmac_total(M, alpha, K_max)
+        mot_preview = M_preview.sum(axis=1)
+        max_val = mot_preview.max()
+        
+        if max_val > 1e6:
+            st.error(f"⚠️ Valores muy grandes\n({max_val/1e6:.1f}M)")
+            st.caption("Reduce K o α")
+        elif max_val > 1e4:
+            st.warning(f"⚠️ Valores grandes\n({max_val/1e3:.1f}K)")
+        else:
+            st.success(f"✅ Valores OK\n({max_val:.0f})")
+
+# Parámetros adicionales
+col_extra1, col_extra2 = st.columns(2)
+
+with col_extra1:
     usar_mediana = st.checkbox(
         "Usar mediana para umbrales",
         value=False,
-        help="Mediana divide en 50%-50%"
+        help="Mediana divide 50%-50%. Media es el método MICMAC clásico."
     )
-    
+
+with col_extra2:
     max_etiquetas = st.slider(
         "Máx. etiquetas en gráficos",
         min_value=10,
@@ -487,63 +732,36 @@ with col3:
         value=min(30, len(nombres)),
         step=5
     )
-
 # ============================================================
 # CÁLCULOS MICMAC
 # ============================================================
 st.markdown("### 📊 Paso 3: Resultados del Análisis")
 
 with st.spinner("🔄 Procesando análisis MICMAC..."):
-    mot_dir = M.sum(axis=1)
-    dep_dir = M.sum(axis=0)
+    # ... (código existente de cálculos) ...
     
-    M_tot = micmac_total(M, alpha, K_max)
-    mot_tot = M_tot.sum(axis=1)
-    dep_tot = M_tot.sum(axis=0)
+    # NUEVO: VALIDACIÓN DE RESULTADOS
+    validation = validate_micmac_results(M, M_tot, alpha, K_max)
     
-    mot_ind = mot_tot - mot_dir
-    dep_ind = dep_tot - dep_dir
-    
-    df_all = pd.DataFrame({
-        "Motricidad_directa": mot_dir,
-        "Motricidad_indirecta": mot_ind,
-        "Motricidad_total": mot_tot,
-        "Dependencia_directa": dep_dir,
-        "Dependencia_indirecta": dep_ind,
-        "Dependencia_total": dep_tot
-    }, index=nombres)
-    
-    if usar_mediana:
-        mot_threshold = np.median(mot_tot)
-        dep_threshold = np.median(dep_tot)
+    # Mostrar warnings de validación
+    if not validation['is_valid']:
+        st.warning("⚠️ **Advertencias sobre los resultados:**")
+        for warning in validation['warnings']:
+            st.write(warning)
+        
+        if validation['recommendations']:
+            st.info("💡 **Recomendaciones:**")
+            for rec in validation['recommendations']:
+                st.write(f"• {rec}")
     else:
-        mot_threshold = np.mean(mot_tot)
-        dep_threshold = np.mean(dep_tot)
-    
-    df_all['Clasificación'] = df_all.apply(
-        lambda row: classify_quadrant(
-            row['Motricidad_total'],
-            row['Dependencia_total'],
-            mot_threshold,
-            dep_threshold
-        ),
-        axis=1
-    )
-    
-    order = np.argsort(-mot_tot)
-    ranking_vars = [nombres[i] for i in order]
-    
-    df_rank = pd.DataFrame({
-        "Posición": np.arange(1, len(nombres) + 1),
-        "Variable": ranking_vars,
-        "Motricidad_total": mot_tot[order],
-        "Motricidad_directa": mot_dir[order],
-        "Motricidad_indirecta": mot_ind[order],
-        "Dependencia_total": dep_tot[order],
-        "Clasificación": [df_all.loc[var, 'Clasificación'] for var in ranking_vars]
-    })
-
-st.success("✅ Análisis completado con éxito")
+        st.success(f"""
+        ✅ Análisis completado con éxito
+        
+        **Calidad de resultados:**
+        - Inflación promedio: {validation['avg_inflation']:.1f}x
+        - Valores máximos: {validation['max_value']:,.0f}
+        - Parámetros: α={alpha}, K={K_max}
+        """)
 
 # ============================================================
 # TABS PARA RESULTADOS

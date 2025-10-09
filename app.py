@@ -282,6 +282,137 @@ if not uploaded_file:
         - La diagonal será automáticamente puesta a 0
         """)
     st.stop()
+# ============================================================
+# DIAGNÓSTICO: AGREGAR DESPUÉS DE CARGAR EL ARCHIVO
+# ============================================================
+
+with st.expander("🔍 DIAGNÓSTICO: Variables con Valores Cero", expanded=False):
+    st.markdown("### Análisis de Variables con Resultados Cero")
+    
+    # 1. Verificar matriz original
+    st.markdown("#### 1️⃣ Matriz Original (Directa)")
+    
+    # Variables con fila completa en ceros (sin motricidad directa)
+    vars_sin_motricidad = []
+    for i, var in enumerate(nombres):
+        if M[i, :].sum() == 0:
+            vars_sin_motricidad.append(var)
+    
+    if vars_sin_motricidad:
+        st.warning(f"⚠️ **{len(vars_sin_motricidad)} variables con motricidad directa = 0** (fila en ceros):")
+        for var in vars_sin_motricidad:
+            st.write(f"- **{var}**: No influye directamente sobre ninguna otra variable")
+        st.info("💡 **Causa:** Estas variables tienen su fila completa en ceros en la matriz de entrada.")
+    else:
+        st.success("✅ Todas las variables tienen motricidad directa > 0")
+    
+    # Variables con columna completa en ceros (sin dependencia directa)
+    vars_sin_dependencia = []
+    for j, var in enumerate(nombres):
+        if M[:, j].sum() == 0:
+            vars_sin_dependencia.append(var)
+    
+    if vars_sin_dependencia:
+        st.warning(f"⚠️ **{len(vars_sin_dependencia)} variables con dependencia directa = 0** (columna en ceros):")
+        for var in vars_sin_dependencia:
+            st.write(f"- **{var}**: No recibe influencia directa de ninguna otra variable")
+        st.info("💡 **Causa:** Estas variables tienen su columna completa en ceros en la matriz de entrada.")
+    else:
+        st.success("✅ Todas las variables tienen dependencia directa > 0")
+    
+    st.markdown("---")
+    
+    # 2. Verificar datos del archivo original
+    st.markdown("#### 2️⃣ Verificación de Datos de Entrada")
+    
+    uploaded_file.seek(0)
+    df_raw_check = pd.read_excel(uploaded_file, sheet_name=sheet, index_col=0)
+    
+    # Verificar valores no numéricos
+    valores_no_numericos = []
+    for col in df_raw_check.columns:
+        if col not in ['SUMA', 'Suma']:
+            for idx in df_raw_check.index:
+                val = df_raw_check.loc[idx, col]
+                if pd.isna(val):
+                    valores_no_numericos.append(f"{idx} → {col}: NaN (vacío)")
+                elif not isinstance(val, (int, float)):
+                    valores_no_numericos.append(f"{idx} → {col}: '{val}' (no numérico)")
+    
+    if valores_no_numericos:
+        st.warning(f"⚠️ **{len(valores_no_numericos)} celdas con valores no numéricos detectados:**")
+        st.write("Estos valores se convirtieron automáticamente a **cero**:")
+        for val in valores_no_numericos[:20]:  # Mostrar primeros 20
+            st.write(f"- {val}")
+        if len(valores_no_numericos) > 20:
+            st.write(f"... y {len(valores_no_numericos) - 20} más")
+    else:
+        st.success("✅ Todos los valores son numéricos")
+    
+    st.markdown("---")
+    
+    # 3. Estadísticas de la matriz
+    st.markdown("#### 3️⃣ Estadísticas de la Matriz")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        total_celdas = M.size
+        celdas_cero = np.count_nonzero(M == 0)
+        st.metric("Celdas con valor 0", f"{celdas_cero}/{total_celdas}")
+        st.caption(f"{(celdas_cero/total_celdas*100):.1f}% de la matriz")
+    
+    with col2:
+        celdas_positivas = np.count_nonzero(M > 0)
+        st.metric("Celdas con valor > 0", f"{celdas_positivas}/{total_celdas}")
+        st.caption(f"{(celdas_positivas/total_celdas*100):.1f}% de la matriz")
+    
+    with col3:
+        valor_max = M.max()
+        valor_promedio = M[M > 0].mean() if celdas_positivas > 0 else 0
+        st.metric("Valor máximo", f"{valor_max:.1f}")
+        st.metric("Promedio (valores > 0)", f"{valor_promedio:.2f}")
+    
+    st.markdown("---")
+    
+    # 4. Heatmap de la matriz original
+    st.markdown("#### 4️⃣ Visualización de la Matriz Original")
+    st.caption("Heatmap para identificar visualmente filas/columnas en cero")
+    
+    fig_diag, ax_diag = plt.subplots(figsize=(16, 14))
+    
+    # Mostrar solo primeras 30 variables si hay muchas
+    max_vars_visual = min(30, len(nombres))
+    M_visual = M[:max_vars_visual, :max_vars_visual]
+    nombres_visual = nombres[:max_vars_visual]
+    
+    sns.heatmap(M_visual, 
+                xticklabels=nombres_visual,
+                yticklabels=nombres_visual,
+                cmap='YlOrRd',
+                annot=False,
+                cbar_kws={'label': 'Intensidad de Influencia'},
+                linewidths=0.5,
+                linecolor='gray',
+                ax=ax_diag)
+    
+    ax_diag.set_title(f"Matriz de Influencias Directas (Primeras {max_vars_visual} variables)", 
+                     fontweight='bold', fontsize=14)
+    ax_diag.set_xlabel("Variables (Dependencia)", fontweight='bold')
+    ax_diag.set_ylabel("Variables (Motricidad)", fontweight='bold')
+    
+    plt.setp(ax_diag.get_xticklabels(), rotation=90, ha='right', fontsize=8)
+    plt.setp(ax_diag.get_yticklabels(), rotation=0, fontsize=8)
+    
+    st.pyplot(fig_diag)
+    
+    st.info("""
+    **Cómo interpretar el heatmap:**
+    - **Filas completamente blancas/claras** → Variable sin motricidad (no influye a otras)
+    - **Columnas completamente blancas/claras** → Variable sin dependencia (no es influida)
+    - La diagonal debe ser blanca (variables no se influyen a sí mismas)
+    """)
+
 
 # ============================================================
 # PROCESAMIENTO DEL ARCHIVO

@@ -102,13 +102,16 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     valores_problematicos = []
     for col in df.columns:
         for idx in df.index:
-            val = df.loc[idx, col]
-            if pd.isna(val):
-                valores_problematicos.append(f"{idx} → {col}: vacío")
-            elif not isinstance(val, (int, float, np.number)):
-                valores_problematicos.append(f"{idx} → {col}: '{val}'")
+            try:
+                val = df.loc[idx, col]
+                if pd.isna(val):
+                    valores_problematicos.append(f"{idx} → {col}: vacío")
+                elif not isinstance(val, (int, float, np.number)):
+                    valores_problematicos.append(f"{idx} → {col}: '{val}'")
+            except:
+                pass
     
-    if valores_problematicos:
+    if valores_problematicos and len(valores_problematicos) < 100:  # Solo mostrar si no son demasiados
         st.warning(f"⚠️ Se detectaron {len(valores_problematicos)} celdas con valores no numéricos que se convertirán a CERO:")
         with st.expander("Ver detalles de valores convertidos"):
             for vp in valores_problematicos[:50]:
@@ -123,8 +126,9 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     common = df.index.intersection(df.columns)
     if len(common) < 3:
         raise ValueError(
-            "No se encuentra suficiente intersección entre filas y columnas "
-            f"para formar una matriz cuadrada. Solo {len(common)} variables en común."
+            f"No se encuentra suficiente intersección entre filas y columnas "
+            f"para formar una matriz cuadrada. Solo {len(common)} variables en común.\n"
+            f"Filas: {len(df.index)} | Columnas: {len(df.columns)}"
         )
     
     # Verificar si hay variables que se perdieron
@@ -133,11 +137,17 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     
     if vars_perdidas_filas:
         st.warning(f"⚠️ {len(vars_perdidas_filas)} variables en FILAS no tienen columna correspondiente (se excluyen):")
-        st.write(", ".join(list(vars_perdidas_filas)[:10]))
+        if len(vars_perdidas_filas) <= 10:
+            st.write(", ".join(list(vars_perdidas_filas)))
+        else:
+            st.write(", ".join(list(vars_perdidas_filas)[:10]) + "...")
     
     if vars_perdidas_cols:
         st.warning(f"⚠️ {len(vars_perdidas_cols)} variables en COLUMNAS no tienen fila correspondiente (se excluyen):")
-        st.write(", ".join(list(vars_perdidas_cols)[:10]))
+        if len(vars_perdidas_cols) <= 10:
+            st.write(", ".join(list(vars_perdidas_cols)))
+        else:
+            st.write(", ".join(list(vars_perdidas_cols)[:10]) + "...")
     
     df = df.loc[common, common].copy()
     
@@ -145,19 +155,24 @@ def ensure_square_from_df(df: pd.DataFrame) -> pd.DataFrame:
     np.fill_diagonal(df.values, 0.0)
     
     # PASO 5: Verificar filas y columnas en cero
-    filas_cero = (df.sum(axis=1) == 0).sum()
-    cols_cero = (df.sum(axis=0) == 0).sum()
+    filas_cero_list = df.index[df.sum(axis=1) == 0].tolist()
+    cols_cero_list = df.columns[df.sum(axis=0) == 0].tolist()
     
-    if filas_cero > 0:
-        st.warning(f"⚠️ **{filas_cero} variables tienen MOTRICIDAD = 0** (fila completa en ceros)")
-        st.info("Estas variables no influyen sobre ninguna otra en la matriz de entrada.")
+    if filas_cero_list:
+        st.warning(f"⚠️ **{len(filas_cero_list)} variables tienen MOTRICIDAD DIRECTA = 0** (fila completa en ceros)")
+        with st.expander("Ver variables con motricidad = 0"):
+            for var in filas_cero_list:
+                st.write(f"• {var}")
+        st.info("💡 Estas variables no influyen directamente sobre ninguna otra en la matriz de entrada.")
     
-    if cols_cero > 0:
-        st.warning(f"⚠️ **{cols_cero} variables tienen DEPENDENCIA = 0** (columna completa en ceros)")
-        st.info("Estas variables no reciben influencia de ninguna otra en la matriz de entrada.")
+    if cols_cero_list:
+        st.warning(f"⚠️ **{len(cols_cero_list)} variables tienen DEPENDENCIA DIRECTA = 0** (columna completa en ceros)")
+        with st.expander("Ver variables con dependencia = 0"):
+            for var in cols_cero_list:
+                st.write(f"• {var}")
+        st.info("💡 Estas variables no reciben influencia directa de ninguna otra en la matriz de entrada.")
     
     return df
-
 
 def micmac_total(M: np.ndarray, alpha: float, K: int) -> np.ndarray:
     """
@@ -446,7 +461,249 @@ try:
     
     st.success(f"✅ Archivo cargado correctamente. Hoja: **{sheet}** • Variables: **{len(nombres)}**")
     
-    # Mostrar vista previa de la matriz
+    # ============================================================
+# DIAGNÓSTICO DETALLADO (DESPUÉS DE PROCESAR)
+# ============================================================
+
+with st.expander("🔍 DIAGNÓSTICO COMPLETO: Análisis de Matriz", expanded=False):
+    st.markdown("### 📊 Diagnóstico de Matriz de Influencias")
+    
+    # 1. Estadísticas generales
+    st.markdown("#### 1️⃣ Estadísticas Generales de la Matriz")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_celdas = M.size
+        celdas_cero = np.count_nonzero(M == 0)
+        st.metric("Total de celdas", total_celdas)
+        st.caption(f"{len(nombres)} × {len(nombres)}")
+    
+    with col2:
+        st.metric("Celdas = 0", celdas_cero)
+        st.caption(f"{(celdas_cero/total_celdas*100):.1f}%")
+    
+    with col3:
+        celdas_positivas = np.count_nonzero(M > 0)
+        st.metric("Celdas > 0", celdas_positivas)
+        st.caption(f"{(celdas_positivas/total_celdas*100):.1f}%")
+    
+    with col4:
+        valor_max = M.max()
+        valor_promedio = M[M > 0].mean() if celdas_positivas > 0 else 0
+        st.metric("Valor máximo", f"{valor_max:.1f}")
+        st.caption(f"Promedio: {valor_promedio:.2f}")
+    
+    st.markdown("---")
+    
+    # 2. Variables con motricidad = 0
+    st.markdown("#### 2️⃣ Variables con Motricidad Directa = 0")
+    
+    vars_sin_motricidad = []
+    for i, var in enumerate(nombres):
+        if M[i, :].sum() == 0:
+            vars_sin_motricidad.append(var)
+    
+    if vars_sin_motricidad:
+        st.error(f"🔴 **{len(vars_sin_motricidad)} variables SIN motricidad directa** (fila completa en ceros)")
+        
+        col_a, col_b = st.columns([2, 1])
+        with col_a:
+            st.write("**Variables afectadas:**")
+            for var in vars_sin_motricidad:
+                st.write(f"• {var}")
+        
+        with col_b:
+            st.info("""
+            **Significado:**
+            - Fila = 0
+            - No influye a otras
+            - Motricidad total = 0
+            - Siempre autónomas
+            """)
+    else:
+        st.success("✅ Todas las variables tienen motricidad directa > 0")
+    
+    st.markdown("---")
+    
+    # 3. Variables con dependencia = 0
+    st.markdown("#### 3️⃣ Variables con Dependencia Directa = 0")
+    
+    vars_sin_dependencia = []
+    for j, var in enumerate(nombres):
+        if M[:, j].sum() == 0:
+            vars_sin_dependencia.append(var)
+    
+    if vars_sin_dependencia:
+        st.error(f"🔴 **{len(vars_sin_dependencia)} variables SIN dependencia directa** (columna completa en ceros)")
+        
+        col_c, col_d = st.columns([2, 1])
+        with col_c:
+            st.write("**Variables afectadas:**")
+            for var in vars_sin_dependencia:
+                st.write(f"• {var}")
+        
+        with col_d:
+            st.info("""
+            **Significado:**
+            - Columna = 0
+            - No es influida
+            - Dependencia total = 0
+            - Posible determinante
+            """)
+    else:
+        st.success("✅ Todas las variables tienen dependencia directa > 0")
+    
+    st.markdown("---")
+    
+    # 4. Heatmap visual
+    st.markdown("#### 4️⃣ Visualización de la Matriz")
+    st.caption("Heatmap para identificar patrones y ceros")
+    
+    fig_diag, ax_diag = plt.subplots(figsize=(16, 14))
+    
+    max_vars_visual = min(40, len(nombres))
+    M_visual = M[:max_vars_visual, :max_vars_visual]
+    nombres_visual = [n[:25] for n in nombres[:max_vars_visual]]
+    
+    sns.heatmap(M_visual, 
+                xticklabels=nombres_visual,
+                yticklabels=nombres_visual,
+                cmap='RdYlGn_r',
+                annot=False,
+                cbar_kws={'label': 'Intensidad'},
+                linewidths=0.5,
+                linecolor='white',
+                vmin=0,
+                vmax=M.max(),
+                ax=ax_diag)
+    
+    ax_diag.set_title(f"Matriz de Influencias Directas (Primeras {max_vars_visual} variables)", 
+                     fontweight='bold', fontsize=14)
+    ax_diag.set_xlabel("Variables (Dependencia) →", fontweight='bold', fontsize=12)
+    ax_diag.set_ylabel("Variables (Motricidad) ↓", fontweight='bold', fontsize=12)
+    
+    plt.setp(ax_diag.get_xticklabels(), rotation=90, ha='right', fontsize=7)
+    plt.setp(ax_diag.get_yticklabels(), rotation=0, fontsize=7)
+    
+    plt.tight_layout()
+    st.pyplot(fig_diag)
+    
+    st.info("""
+    **Guía de interpretación:**
+    - 🟢 **Verde**: Valores altos de influencia
+    - 🟡 **Amarillo**: Valores medios
+    - 🔴 **Rojo/Blanco**: Valores bajos o cero
+    - **Filas verdes**: Variables con alta motricidad
+    - **Columnas verdes**: Variables con alta dependencia
+    - **Filas blancas/rojas**: Variables sin motricidad (problema)
+    - **Columnas blancas/rojas**: Variables sin dependencia
+    """)
+    
+    st.markdown("---")
+    
+    # 5. Distribución de valores
+    st.markdown("#### 5️⃣ Distribución de Valores de Influencia")
+    
+    fig_hist, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Histograma de todos los valores
+    valores_no_cero = M[M > 0].flatten()
+    if len(valores_no_cero) > 0:
+        ax1.hist(valores_no_cero, bins=20, color='steelblue', edgecolor='black', alpha=0.7)
+        ax1.set_xlabel('Valor de Influencia', fontweight='bold')
+        ax1.set_ylabel('Frecuencia', fontweight='bold')
+        ax1.set_title('Distribución de Valores > 0', fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+        
+        # Estadísticas
+        ax1.axvline(np.mean(valores_no_cero), color='red', linestyle='--', 
+                   label=f'Media: {np.mean(valores_no_cero):.2f}', linewidth=2)
+        ax1.axvline(np.median(valores_no_cero), color='green', linestyle='--', 
+                   label=f'Mediana: {np.median(valores_no_cero):.2f}', linewidth=2)
+        ax1.legend()
+    else:
+        ax1.text(0.5, 0.5, 'Sin valores > 0', ha='center', va='center', 
+                transform=ax1.transAxes, fontsize=14)
+    
+    # Distribución de motricidad y dependencia
+    mot_directa = M.sum(axis=1)
+    dep_directa = M.sum(axis=0)
+    
+    ax2.scatter(dep_directa, mot_directa, alpha=0.6, s=80, c='steelblue', edgecolors='black')
+    ax2.set_xlabel('Dependencia Directa', fontweight='bold')
+    ax2.set_ylabel('Motricidad Directa', fontweight='bold')
+    ax2.set_title('Motricidad vs Dependencia (Directa)', fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    
+    # Marcar variables con cero
+    for i, var in enumerate(nombres):
+        if mot_directa[i] == 0 or dep_directa[i] == 0:
+            ax2.scatter(dep_directa[i], mot_directa[i], s=200, c='red', 
+                       marker='x', linewidths=3, label='Cero' if i == 0 else '')
+    
+    if vars_sin_motricidad or vars_sin_dependencia:
+        ax2.legend()
+    
+    plt.tight_layout()
+    st.pyplot(fig_hist)
+    
+    st.markdown("---")
+    
+    # 6. Resumen y recomendaciones
+    st.markdown("#### 6️⃣ Resumen y Recomendaciones")
+    
+    tiene_problemas = len(vars_sin_motricidad) > 0 or len(vars_sin_dependencia) > 0
+    
+    if tiene_problemas:
+        st.error("""
+        ### ⚠️ PROBLEMAS DETECTADOS
+        
+        Tu matriz tiene variables con valores en cero. Esto puede deberse a:
+        
+        **Causas comunes:**
+        1. **Matriz incompleta**: Variables sin relaciones definidas
+        2. **Errores de entrada**: Celdas vacías en el Excel original
+        3. **Diseño intencional**: Variables genuinamente aisladas del sistema
+        
+        **Consecuencias:**
+        - Variables con motricidad = 0 → Siempre clasificadas como "Autónomas"
+        - Variables con dependencia = 0 → Pueden ser "Determinantes" o "Autónomas"
+        - Estas variables no participan en la propagación de influencias indirectas
+        
+        **Soluciones recomendadas:**
+        """)
+        
+        col_sol1, col_sol2 = st.columns(2)
+        
+        with col_sol1:
+            st.info("""
+            **Opción 1: Revisar datos**
+            - Verificar Excel original
+            - Completar relaciones faltantes
+            - Asegurar que todas las variables participen del sistema
+            """)
+        
+        with col_sol2:
+            st.info("""
+            **Opción 2: Aceptar diseño**
+            - Si es intencional, mantener
+            - Documentar por qué estas variables están aisladas
+            - Considerar si deben estar en el análisis
+            """)
+    else:
+        st.success("""
+        ### ✅ MATRIZ COMPLETA Y VÁLIDA
+        
+        No se detectaron problemas estructurales. Todas las variables:
+        - Tienen motricidad directa > 0 (influyen sobre otras)
+        - Tienen dependencia directa > 0 (son influidas por otras)
+        - Participan activamente en la dinámica del sistema
+        """)
+  
+  
+  
+  # Mostrar vista previa de la matriz
     with st.expander("👁️ Vista previa de la matriz cargada"):
         st.dataframe(df.head(10), use_container_width=True)
         st.caption(f"Mostrando las primeras 10 de {len(nombres)} variables")

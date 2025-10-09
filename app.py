@@ -844,13 +844,15 @@ else:
     # Crear figura
     fig_grafo, ax_grafo = plt.subplots(figsize=(20, 16))
     
-    # Layout del grafo
+   
+    # Layout del grafo con mejor espaciado
     if layout_tipo == 'spring':
-        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+        pos = nx.spring_layout(G, k=3, iterations=50, seed=42)  # Aumentar k de 2 a 3
     elif layout_tipo == 'circular':
-        pos = nx.circular_layout(G)
+        pos = nx.circular_layout(G, scale=2)  # Agregar scale para más espacio
     else:  # kamada_kawai
-        pos = nx.kamada_kawai_layout(G)
+        pos = nx.kamada_kawai_layout(G, scale=2)
+
     
     # Colores de nodos según clasificación
     node_colors = []

@@ -861,8 +861,8 @@ else:  # kamada_kawai
     pos = nx.kamada_kawai_layout(G, scale=espaciado_factor)
 
   # Expandir posiciones adicional si es necesario
-  expansion_extra = 1.2
-  pos = {node: (x * expansion_extra, y * expansion_extra) for node, (x, y) in pos.items()}
+expansion_extra = 1.2
+pos = {node: (x * expansion_extra, y * expansion_extra) for node, (x, y) in pos.items()}
 
 
     

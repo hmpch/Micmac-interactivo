@@ -847,7 +847,7 @@ else:
 
 
       # Layout del grafo con mejor espaciado
-    espaciado_factor = 5.0  # Ajusta este valor (2.0 = menos espacio, 8.0 = mucho espacio)
+    espaciado_factor = 8.0  # Ajusta este valor (2.0 = menos espacio, 8.0 = mucho espacio)
 
     if layout_tipo == 'spring':
         pos = nx.spring_layout(

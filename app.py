@@ -1071,8 +1071,7 @@ else:
 
 # TAB 6
 with tab6:
-    # TAB 6
-with tab6:
+
     # ============================================================
     # GENERADOR DE INFORME DE INTELIGENCIA CON PDF COMPLETO
     # ============================================================

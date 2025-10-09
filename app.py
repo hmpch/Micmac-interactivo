@@ -316,7 +316,8 @@ def validate_micmac_results(M: np.ndarray, M_tot: np.ndarray, alpha: float, K: i
         'max_value': max_value,
         'is_valid': len([w for w in warnings if '⚠️' in w]) == 0
     }
-  def analyze_stability(M: np.ndarray, alpha_values, K_values):
+
+def analyze_stability(M: np.ndarray, alpha_values, K_values):
     """
     Analiza la estabilidad del ranking bajo diferentes combinaciones de α y K.
     """

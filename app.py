@@ -843,26 +843,30 @@ if G.number_of_edges() == 0:
 else:
     # Crear figura
     fig_grafo, ax_grafo = plt.subplots(figsize=(20, 16))
-    
+
+
+
+      # Layout del grafo con mejor espaciado
+    espaciado_factor = 5.0  # Ajusta este valor (2.0 = menos espacio, 8.0 = mucho espacio)
+
+    if layout_tipo == 'spring':
+        pos = nx.spring_layout(
+            G, 
+            k=espaciado_factor,    # Distancia ideal entre nodos
+            iterations=150,        # Más iteraciones para mejor distribución  
+            seed=42
+        )
+    elif layout_tipo == 'circular':
+        pos = nx.circular_layout(G, scale=espaciado_factor)
+    else:  # kamada_kawai
+        pos = nx.kamada_kawai_layout(G, scale=espaciado_factor)
+
+    # Expandir posiciones adicional si es necesario
+    expansion_extra = 1.2
+    pos = {node: (x * expansion_extra, y * expansion_extra) for node, (x, y) in pos.items()}
+
    
-# Layout del grafo con mejor espaciado
-espaciado_factor = 5.0  # Ajusta este valor (2.0 = menos espacio, 8.0 = mucho espacio)
 
-if layout_tipo == 'spring':
-    pos = nx.spring_layout(
-        G, 
-        k=espaciado_factor,    # Distancia ideal entre nodos
-        iterations=150,        # Más iteraciones para mejor distribución  
-        seed=42
-    )
-elif layout_tipo == 'circular':
-    pos = nx.circular_layout(G, scale=espaciado_factor)
-else:  # kamada_kawai
-    pos = nx.kamada_kawai_layout(G, scale=espaciado_factor)
-
-  # Expandir posiciones adicional si es necesario
-expansion_extra = 1.2
-pos = {node: (x * expansion_extra, y * expansion_extra) for node, (x, y) in pos.items()}
 
 
     

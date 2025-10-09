@@ -727,6 +727,329 @@ with tab5:
         ax_bar.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
     
     st.pyplot(fig_bar)
+# ============================================================
+# GRÁFICO DE INFLUENCIAS INDIRECTAS (GRAFO DE RED)
+# ============================================================
+
+st.markdown("---")
+st.markdown("#### 🕸️ Gráfico de Influencias Indirectas")
+st.caption("Visualización de red: propagación de influencias entre variables")
+
+# Instalar networkx si es necesario
+try:
+    import networkx as nx
+except ImportError:
+    st.error("⚠️ Esta visualización requiere networkx. Instala con: pip install networkx")
+    st.stop()
+
+# Calcular matriz de influencias indirectas (ya está calculada)
+M_ind_matrix = M_tot - M
+
+# Parámetros de visualización
+col_g1, col_g2, col_g3 = st.columns(3)
+
+with col_g1:
+    umbral_minimo = st.slider(
+        "Umbral mínimo de influencia",
+        min_value=0.0,
+        max_value=float(np.percentile(M_ind_matrix[M_ind_matrix > 0], 50)),
+        value=float(np.percentile(M_ind_matrix[M_ind_matrix > 0], 25)),
+        step=0.1,
+        help="Mostrar solo influencias indirectas mayores a este valor"
+    )
+
+with col_g2:
+    max_nodos = st.slider(
+        "Máximo de nodos a mostrar",
+        min_value=10,
+        max_value=min(50, len(nombres)),
+        value=min(25, len(nombres)),
+        help="Limitar cantidad de nodos para mejor visualización"
+    )
+
+with col_g3:
+    layout_tipo = st.selectbox(
+        "Tipo de layout",
+        options=['spring', 'circular', 'kamada_kawai'],
+        index=0,
+        help="Algoritmo de posicionamiento de nodos"
+    )
+
+# Seleccionar top N nodos por motricidad indirecta
+top_nodos_idx = np.argsort(mot_ind)[-max_nodos:]
+nombres_seleccionados = [nombres[i] for i in top_nodos_idx]
+
+# Crear grafo dirigido
+G = nx.DiGraph()
+
+# Agregar nodos
+for i, var in enumerate(nombres_seleccionados):
+    idx_original = nombres.index(var)
+    G.add_node(var, 
+               motricidad=mot_ind[idx_original],
+               dependencia=dep_ind[idx_original],
+               clasificacion=df_all.loc[var, 'Clasificación'])
+
+# Clasificar influencias indirectas en categorías
+influencias_todas = M_ind_matrix[M_ind_matrix > umbral_minimo]
+
+if len(influencias_todas) > 0:
+    # Percentiles para clasificación
+    p25 = np.percentile(influencias_todas, 25)
+    p50 = np.percentile(influencias_todas, 50)
+    p75 = np.percentile(influencias_todas, 75)
+    p90 = np.percentile(influencias_todas, 90)
+    
+    # Agregar aristas con clasificación
+    for i, var_origen in enumerate(nombres_seleccionados):
+        idx_i = nombres.index(var_origen)
+        for j, var_destino in enumerate(nombres_seleccionados):
+            if i != j:  # No auto-loops
+                idx_j = nombres.index(var_destino)
+                influencia = M_ind_matrix[idx_i, idx_j]
+                
+                if influencia > umbral_minimo:
+                    # Clasificar influencia
+                    if influencia > p90:
+                        categoria = 'muy_importante'
+                        color = '#CC0000'  # Rojo oscuro
+                        ancho = 3.0
+                    elif influencia > p75:
+                        categoria = 'importante'
+                        color = '#FF6600'  # Naranja
+                        ancho = 2.5
+                    elif influencia > p50:
+                        categoria = 'media'
+                        color = '#FFAA00'  # Amarillo-naranja
+                        ancho = 2.0
+                    elif influencia > p25:
+                        categoria = 'debil'
+                        color = '#88BBFF'  # Azul claro
+                        ancho = 1.5
+                    else:
+                        categoria = 'muy_debil'
+                        color = '#CCCCCC'  # Gris
+                        ancho = 1.0
+                    
+                    G.add_edge(var_origen, var_destino,
+                             weight=influencia,
+                             categoria=categoria,
+                             color=color,
+                             ancho=ancho)
+
+# Verificar que hay aristas
+if G.number_of_edges() == 0:
+    st.warning(f"⚠️ No hay influencias indirectas mayores al umbral {umbral_minimo:.2f}. Reduce el umbral.")
+else:
+    # Crear figura
+    fig_grafo, ax_grafo = plt.subplots(figsize=(20, 16))
+    
+    # Layout del grafo
+    if layout_tipo == 'spring':
+        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+    elif layout_tipo == 'circular':
+        pos = nx.circular_layout(G)
+    else:  # kamada_kawai
+        pos = nx.kamada_kawai_layout(G)
+    
+    # Colores de nodos según clasificación
+    node_colors = []
+    node_sizes = []
+    for node in G.nodes():
+        clasificacion = G.nodes[node]['clasificacion']
+        motricidad = G.nodes[node]['motricidad']
+        
+        if clasificacion == 'Crítico/inestable':
+            node_colors.append('#1166CC')
+        elif clasificacion == 'Determinantes':
+            node_colors.append('#FF4444')
+        elif clasificacion == 'Variables resultado':
+            node_colors.append('#66BBFF')
+        else:
+            node_colors.append('#FF9944')
+        
+        # Tamaño proporcional a motricidad indirecta
+        node_sizes.append(300 + motricidad * 10)
+    
+    # Dibujar aristas por categoría
+    categorias_aristas = {
+        'muy_importante': {'edges': [], 'color': '#CC0000', 'ancho': 3.0, 'alpha': 0.8, 'label': 'Muy importantes'},
+        'importante': {'edges': [], 'color': '#FF6600', 'ancho': 2.5, 'alpha': 0.7, 'label': 'Importantes'},
+        'media': {'edges': [], 'color': '#FFAA00', 'ancho': 2.0, 'alpha': 0.6, 'label': 'Medias'},
+        'debil': {'edges': [], 'color': '#88BBFF', 'ancho': 1.5, 'alpha': 0.5, 'label': 'Débiles'},
+        'muy_debil': {'edges': [], 'color': '#CCCCCC', 'ancho': 1.0, 'alpha': 0.4, 'label': 'Muy débiles'}
+    }
+    
+    # Agrupar aristas por categoría
+    for (u, v, data) in G.edges(data=True):
+        categoria = data['categoria']
+        categorias_aristas[categoria]['edges'].append((u, v))
+    
+    # Dibujar aristas por categoría (de menos a más importante para superposición correcta)
+    for cat in ['muy_debil', 'debil', 'media', 'importante', 'muy_importante']:
+        if categorias_aristas[cat]['edges']:
+            nx.draw_networkx_edges(
+                G, pos,
+                edgelist=categorias_aristas[cat]['edges'],
+                edge_color=categorias_aristas[cat]['color'],
+                width=categorias_aristas[cat]['ancho'],
+                alpha=categorias_aristas[cat]['alpha'],
+                arrows=True,
+                arrowsize=15,
+                arrowstyle='->',
+                connectionstyle='arc3,rad=0.1',
+                ax=ax_grafo
+            )
+    
+    # Dibujar nodos
+    nx.draw_networkx_nodes(
+        G, pos,
+        node_color=node_colors,
+        node_size=node_sizes,
+        alpha=0.9,
+        edgecolors='black',
+        linewidths=2,
+        ax=ax_grafo
+    )
+    
+    # Etiquetas de nodos
+    labels = {node: node[:20] for node in G.nodes()}  # Truncar nombres largos
+    nx.draw_networkx_labels(
+        G, pos,
+        labels=labels,
+        font_size=8,
+        font_weight='bold',
+        font_color='black',
+        ax=ax_grafo
+    )
+    
+    # Título y leyenda
+    ax_grafo.set_title(
+        f"GRÁFICO DE INFLUENCIAS INDIRECTAS (α={alpha}, K={K_max})\n"
+        f"Nodos: {G.number_of_nodes()} | Conexiones: {G.number_of_edges()}",
+        fontweight='bold',
+        fontsize=16,
+        pad=20
+    )
+    
+    # Leyenda personalizada
+    from matplotlib.lines import Line2D
+    legend_elements = []
+    
+    # Leyenda de aristas (influencias)
+    for cat in ['muy_importante', 'importante', 'media', 'debil', 'muy_debil']:
+        if categorias_aristas[cat]['edges']:
+            legend_elements.append(
+                Line2D([0], [0], color=categorias_aristas[cat]['color'],
+                      linewidth=categorias_aristas[cat]['ancho'],
+                      label=f"{categorias_aristas[cat]['label']} ({len(categorias_aristas[cat]['edges'])})")
+            )
+    
+    legend_elements.append(Line2D([0], [0], color='white', linewidth=0, label=''))  # Separador
+    
+    # Leyenda de nodos (clasificación)
+    legend_elements.extend([
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF4444', 
+               markersize=10, label='Determinantes'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#1166CC', 
+               markersize=10, label='Crítico/inestable'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#66BBFF', 
+               markersize=10, label='Variables resultado'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF9944', 
+               markersize=10, label='Autónomas')
+    ])
+    
+    ax_grafo.legend(handles=legend_elements, loc='upper left', fontsize=10, 
+                   frameon=True, shadow=True, title='Leyenda')
+    
+    ax_grafo.axis('off')
+    ax_grafo.margins(0.1)
+    
+    st.pyplot(fig_grafo)
+    
+    # Estadísticas del grafo
+    st.markdown("#### 📊 Estadísticas del Grafo de Influencias Indirectas")
+    
+    col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+    
+    with col_e1:
+        st.metric("Nodos (Variables)", G.number_of_nodes())
+    
+    with col_e2:
+        st.metric("Conexiones (Influencias)", G.number_of_edges())
+    
+    with col_e3:
+        densidad = nx.density(G)
+        st.metric("Densidad de Red", f"{densidad:.3f}")
+    
+    with col_e4:
+        grado_medio = sum(dict(G.degree()).values()) / G.number_of_nodes()
+        st.metric("Grado Medio", f"{grado_medio:.1f}")
+    
+    # Top 10 variables más conectadas (mayor grado de salida)
+    st.markdown("#### 🎯 Top 10 Variables con Mayor Influencia Indirecta (Grado de Salida)")
+    
+    out_degree = dict(G.out_degree())
+    top_influencers = sorted(out_degree.items(), key=lambda x: x[1], reverse=True)[:10]
+    
+    df_influencers = pd.DataFrame({
+        'Variable': [var for var, deg in top_influencers],
+        'Conexiones_Salida': [deg for var, deg in top_influencers],
+        'Motricidad_Indirecta': [mot_ind[nombres.index(var)] for var, deg in top_influencers],
+        'Clasificación': [df_all.loc[var, 'Clasificación'] for var, deg in top_influencers]
+    })
+    
+    st.dataframe(
+        df_influencers.style.background_gradient(subset=['Conexiones_Salida'], cmap='Reds'),
+        use_container_width=True
+    )
+    
+    # Botón de descarga
+    img_grafo = io.BytesIO()
+    fig_grafo.savefig(img_grafo, format='png', dpi=300, bbox_inches='tight', facecolor='white')
+    img_grafo.seek(0)
+    st.download_button(
+        label="📥 Descargar Gráfico de Influencias Indirectas (PNG)",
+        data=img_grafo,
+        file_name=f"micmac_influencias_indirectas_a{alpha}_k{K_max}.png",
+        mime="image/png"
+    )
+    
+    # Interpretación
+    with st.expander("ℹ️ Interpretación del Gráfico de Influencias Indirectas"):
+        st.markdown("""
+        ### ¿Cómo interpretar este gráfico?
+        
+        **Nodos (Variables):**
+        - **Tamaño:** Proporcional a la motricidad indirecta de la variable
+        - **Color:** Según clasificación MICMAC (Determinantes, Críticas, Resultado, Autónomas)
+        
+        **Aristas (Influencias Indirectas):**
+        - **Color y grosor:** Indican la intensidad de la influencia indirecta
+        - **Muy importantes (rojo oscuro):** Influencias indirectas muy fuertes (>percentil 90)
+        - **Importantes (naranja):** Influencias indirectas fuertes (percentil 75-90)
+        - **Medias (amarillo-naranja):** Influencias indirectas moderadas (percentil 50-75)
+        - **Débiles (azul claro):** Influencias indirectas bajas (percentil 25-50)
+        - **Muy débiles (gris):** Influencias indirectas mínimas (< percentil 25)
+        
+        **Análisis de Red:**
+        - **Densidad:** Indica qué tan interconectado está el sistema (0 = sin conexiones, 1 = totalmente conectado)
+        - **Grado medio:** Número promedio de conexiones por variable
+        - **Hubs (concentradores):** Variables con muchas conexiones de salida → alto poder de influencia indirecta
+        - **Puentes:** Variables que conectan grupos → facilitadores de propagación de cambios
+        
+        ### Interpretación Estratégica
+        
+        Este gráfico revela las **cadenas de influencia** que no son evidentes en el análisis directo:
+        - Variables que influyen **indirectamente** a través de intermediarios
+        - Efectos **multiplicadores** y **cascada** en el sistema
+        - Variables que funcionan como **transmisores** o **amplificadores**
+        
+        **Recomendación:** Presta atención especial a las variables con:
+        - Muchas conexiones de salida (alto grado) → puntos de intervención para cambios sistémicos
+        - Conexiones rojas/naranjas → canales de influencia muy fuertes
+        - Posición central en el grafo → facilitadores clave de la dinámica del sistema
+        """)
 
 # TAB 6
 with tab6:

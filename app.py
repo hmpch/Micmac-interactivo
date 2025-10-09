@@ -1071,6 +1071,8 @@ else:
 
 # TAB 6
 with tab6:
+    # TAB 6
+with tab6:
     # ============================================================
     # GENERADOR DE INFORME DE INTELIGENCIA CON PDF COMPLETO
     # ============================================================
@@ -1088,6 +1090,42 @@ with tab6:
             
             # Análisis automático de resultados
             top_5_motoras = ranking_vars[:5]
+            
+            # RECREAR VARIABLES NECESARIAS PARA EL INFORME
+            # Recrear clasificación por cuadrantes
+            ref_x = np.median(mot_tot)
+            ref_y = np.median(dep_tot)
+            
+            labels_cuadrante = []
+            colors = []
+            color_map = {
+                "Determinantes":      "#FF4444",
+                "Crítico/inestable":  "#1166CC",
+                "Variables resultado":"#66BBFF",
+                "Autónomas":          "#FF9944",
+            }
+            
+            for xi, yi in zip(mot_tot, dep_tot):
+                if   xi >= ref_x and yi <  ref_y: 
+                    labels_cuadrante.append("Determinantes")
+                    colors.append(color_map["Determinantes"])
+                elif xi >= ref_x and yi >= ref_y: 
+                    labels_cuadrante.append("Crítico/inestable")
+                    colors.append(color_map["Crítico/inestable"])
+                elif xi <  ref_x and yi >= ref_y: 
+                    labels_cuadrante.append("Variables resultado")
+                    colors.append(color_map["Variables resultado"])
+                else:                              
+                    labels_cuadrante.append("Autónomas")
+                    colors.append(color_map["Autónomas"])
+            
+            # Recrear scores estratégicos
+            x_norm = mot_tot / (mot_tot.max() if mot_tot.max()!=0 else 1.0)
+            y_norm = dep_tot / (dep_tot.max() if dep_tot.max()!=0 else 1.0)
+            dist = np.abs(y_norm - x_norm) / np.sqrt(2)
+            strategic_scores = (x_norm + y_norm)/2 - dist
+            
+            # Variables estratégicas top 3
             top_3_estrategicas = [nombres[i] for i in np.argsort(strategic_scores)[-3:]][::-1]
             
             # Contar variables por cuadrante
@@ -1099,6 +1137,19 @@ with tab6:
             # Variables críticas por motricidad
             vars_alta_motricidad = [nombres[i] for i in range(len(nombres)) if mot_tot[i] > np.percentile(mot_tot, 90)]
             vars_alta_dependencia = [nombres[i] for i in range(len(nombres)) if dep_tot[i] > np.percentile(dep_tot, 90)]
+            
+            # Colores para eje estratégico
+            p80, p60, p40 = np.percentile(strategic_scores, [80, 60, 40])
+            col_est = []
+            for s in strategic_scores:
+                if s > p80:   col_est.append("#CC0000")
+                elif s > p60: col_est.append("#FF6600")
+                elif s > p40: col_est.append("#3388BB")
+                else:         col_est.append("#888888")
+            
+            sizes_est = 50 + 100*(strategic_scores - strategic_scores.min())/(
+                (strategic_scores.max() - strategic_scores.min()) if strategic_scores.max()>strategic_scores.min() else 1.0
+            )
             
             # Crear archivo temporal para PDF
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
@@ -1122,35 +1173,94 @@ with tab6:
                     
                     # Información del análisis
                     fecha_actual = datetime.now().strftime("%d de %B de %Y")
-                    info_text = f"""
-                    Sistema Analizado: {len(nombres)} Variables
-                    Parámetros: α={alpha}, K={K_max}
-                    Fecha de Análisis: {fecha_actual}
+                    info_text = f"""Sistema Analizado: {len(nombres)} Variables
+Parámetros: α={alpha}, K={K_max}
+Fecha de Análisis: {fecha_actual}
+
+Generado por: Sistema MICMAC Interactivo v3.5
+Desarrollado por: Martín Pratto"""
                     
-                    Generado por: Sistema MICMAC Interactivo v3.5
-                    Desarrollado por: Martín Pratto
-                    """
                     ax_portada.text(0.5, 0.5, info_text, fontsize=12, ha='center', va='center',
                                    bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.7))
                     
                     # Resumen ejecutivo
-                    resumen = f"""
-                    HALLAZGOS PRINCIPALES:
+                    resumen = f"""HALLAZGOS PRINCIPALES:
+
+• {count_criticas} Variables Críticas/Inestables ({count_criticas/len(nombres)*100:.1f}%)
+• {count_determinantes} Variables Determinantes ({count_determinantes/len(nombres)*100:.1f}%)
+• {count_resultado} Variables Resultado ({count_resultado/len(nombres)*100:.1f}%)
+
+Variables Más Estratégicas:
+1. {top_3_estrategicas[0]}
+2. {top_3_estrategicas[1]}
+3. {top_3_estrategicas[2]}"""
                     
-                    • {count_criticas} Variables Críticas/Inestables ({count_criticas/len(nombres)*100:.1f}%)
-                    • {count_determinantes} Variables Determinantes ({count_determinantes/len(nombres)*100:.1f}%)
-                    • {count_resultado} Variables Resultado ({count_resultado/len(nombres)*100:.1f}%)
-                    
-                    Variables Más Estratégicas:
-                    1. {top_3_estrategicas[0]}
-                    2. {top_3_estrategicas[1]}
-                    3. {top_3_estrategicas[2]}
-                    """
                     ax_portada.text(0.5, 0.2, resumen, fontsize=11, ha='center', va='center',
                                    bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgreen", alpha=0.7))
                     
                     pdf.savefig(fig_portada, bbox_inches='tight')
                     plt.close(fig_portada)
+                    
+                    # ========================================
+                    # PÁGINA 2: MAPA MICMAC (TOTAL)
+                    # ========================================
+                    fig_mapa_pdf = plt.figure(figsize=(12, 9))
+                    ax_mapa_pdf = fig_mapa_pdf.add_subplot(111)
+                    
+                    # Recrear mapa MICMAC
+                    sc = ax_mapa_pdf.scatter(mot_tot, dep_tot, c=colors, s=120, alpha=0.85, edgecolors='black', linewidth=1.0)
+                    ax_mapa_pdf.axvline(ref_x, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
+                    ax_mapa_pdf.axhline(ref_y, color='black', linestyle='--', linewidth=1.2, alpha=0.8)
+                    
+                    # Etiquetas (solo top variables)
+                    top_indices_pdf = np.argsort(-mot_tot)[:15]  # Top 15
+                    for i in top_indices_pdf:
+                        ax_mapa_pdf.text(mot_tot[i], dep_tot[i], f" {nombres[i][:15]}", fontsize=8)
+                    
+                    ax_mapa_pdf.set_xlabel("Motricidad (Total)", fontweight='bold', fontsize=12)
+                    ax_mapa_pdf.set_ylabel("Dependencia (Total)", fontweight='bold', fontsize=12)
+                    ax_mapa_pdf.set_title(f"MAPA MICMAC TOTAL — α={alpha}, K={K_max}", fontweight='bold', fontsize=14)
+                    
+                    # Leyenda
+                    handles_pdf = [
+                        plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Determinantes"], markersize=10, label='Determinantes'),
+                        plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Crítico/inestable"], markersize=10, label='Crítico/inestable'),
+                        plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Variables resultado"], markersize=10, label='Variables resultado'),
+                        plt.Line2D([0],[0], marker='o', color='w', markerfacecolor=color_map["Autónomas"], markersize=10, label='Autónomas'),
+                    ]
+                    ax_mapa_pdf.legend(handles=handles_pdf, loc='upper left', frameon=True)
+                    ax_mapa_pdf.grid(True, alpha=0.25)
+                    
+                    pdf.savefig(fig_mapa_pdf, bbox_inches='tight')
+                    plt.close(fig_mapa_pdf)
+                    
+                    # ========================================
+                    # PÁGINA 3: EJE DE ESTRATEGIA
+                    # ========================================
+                    fig_eje_pdf = plt.figure(figsize=(11, 9))
+                    ax_eje_pdf = fig_eje_pdf.add_subplot(111)
+                    
+                    # Recrear eje de estrategia
+                    ax_eje_pdf.scatter(mot_tot, dep_tot, c=col_est, s=sizes_est, alpha=0.85, edgecolors='black', linewidth=1.0)
+                    ax_eje_pdf.plot([0, mot_tot.max()], [0, dep_tot.max()], 'r--', lw=2, label='Eje de estrategia')
+                    
+                    # Etiquetas top estratégicas
+                    idx_top_est_pdf = np.argsort(strategic_scores)[-10:]  # Top 10 estratégicas
+                    for i in idx_top_est_pdf:
+                        ax_eje_pdf.text(mot_tot[i], dep_tot[i], f" {nombres[i][:15]}", fontsize=8)
+                    
+                    ax_eje_pdf.set_xlabel("Motricidad (Total)", fontweight='bold', fontsize=12)
+                    ax_eje_pdf.set_ylabel("Dependencia (Total)", fontweight='bold', fontsize=12)
+                    ax_eje_pdf.set_title("EJE DE ESTRATEGIA", fontweight='bold', fontsize=14)
+                    ax_eje_pdf.legend(loc='upper left')
+                    ax_eje_pdf.grid(True, alpha=0.25)
+                    
+                    pdf.savefig(fig_eje_pdf, bbox_inches='tight')
+                    plt.close(fig_eje_pdf)
+                    
+                    # Resto del código igual (página 4, 5, 6, 7)...
+                    # [CONTINÚA CON EL RESTO DEL CÓDIGO ANTERIOR]
+
                     
                     # ========================================
                     # PÁGINA 2: MAPA MICMAC (TOTAL)

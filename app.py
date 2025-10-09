@@ -316,7 +316,7 @@ def validate_micmac_results(M: np.ndarray, M_tot: np.ndarray, alpha: float, K: i
         'max_value': max_value,
         'is_valid': len([w for w in warnings if '⚠️' in w]) == 0
     }
-def analyze_stability(M: np.ndarray, alpha_values, K_values):
+  def analyze_stability(M: np.ndarray, alpha_values, K_values):
     """
     Analiza la estabilidad del ranking bajo diferentes combinaciones de α y K.
     """
@@ -738,30 +738,390 @@ with col_extra2:
 st.markdown("### 📊 Paso 3: Resultados del Análisis")
 
 with st.spinner("🔄 Procesando análisis MICMAC..."):
-    # ... (código existente de cálculos) ...
+    # Calcular motricidad y dependencia directas
+    mot_dir = M.sum(axis=1)
+    dep_dir = M.sum(axis=0)
     
-    # NUEVO: VALIDACIÓN DE RESULTADOS
-    validation = validate_micmac_results(M, M_tot, alpha, K_max)
+    # Calcular matriz total con propagación
+    M_tot = micmac_total(M, alpha, K_max)
+    mot_tot = M_tot.sum(axis=1)
+    dep_tot = M_tot.sum(axis=0)
     
-    # Mostrar warnings de validación
-    if not validation['is_valid']:
-        st.warning("⚠️ **Advertencias sobre los resultados:**")
-        for warning in validation['warnings']:
-            st.write(warning)
-        
-        if validation['recommendations']:
-            st.info("💡 **Recomendaciones:**")
-            for rec in validation['recommendations']:
-                st.write(f"• {rec}")
+    # Calcular indirectas
+    mot_ind = mot_tot - mot_dir
+    dep_ind = dep_tot - dep_dir
+    
+    # Crear DataFrame con todos los datos
+    df_all = pd.DataFrame({
+        "Motricidad_directa": mot_dir,
+        "Motricidad_indirecta": mot_ind,
+        "Motricidad_total": mot_tot,
+        "Dependencia_directa": dep_dir,
+        "Dependencia_indirecta": dep_ind,
+        "Dependencia_total": dep_tot
+    }, index=nombres)
+    
+    # Calcular umbrales
+    if usar_mediana:
+        mot_threshold = np.median(mot_tot)
+        dep_threshold = np.median(dep_tot)
     else:
-        st.success(f"""
-        ✅ Análisis completado con éxito
+        mot_threshold = np.mean(mot_tot)
+        dep_threshold = np.mean(dep_tot)
+    
+    # Clasificar variables
+    df_all['Clasificación'] = df_all.apply(
+        lambda row: classify_quadrant(
+            row['Motricidad_total'],
+            row['Dependencia_total'],
+            mot_threshold,
+            dep_threshold
+        ),
+        axis=1
+    )
+    
+    # Crear ranking
+    order = np.argsort(-mot_tot)
+    ranking_vars = [nombres[i] for i in order]
+    
+    df_rank = pd.DataFrame({
+        "Posición": np.arange(1, len(nombres) + 1),
+        "Variable": ranking_vars,
+        "Motricidad_total": mot_tot[order],
+        "Motricidad_directa": mot_dir[order],
+        "Motricidad_indirecta": mot_ind[order],
+        "Dependencia_total": dep_tot[order],
+        "Clasificación": [df_all.loc[var, 'Clasificación'] for var in ranking_vars]
+    })
+
+# VALIDACIÓN DE RESULTADOS (fuera del spinner)
+validation = validate_micmac_results(M, M_tot, alpha, K_max)
+
+# Mostrar resultados de validación
+if not validation['is_valid']:
+    st.warning("⚠️ **Advertencias sobre los resultados:**")
+    for warning in validation['warnings']:
+        st.write(warning)
+    
+    if validation['recommendations']:
+        st.info("💡 **Recomendaciones:**")
+        for rec in validation['recommendations']:
+            st.write(f"• {rec}")
+else:
+    st.success(f"""
+    ✅ Análisis completado con éxito
+    
+    **Calidad de resultados:**
+    - Inflación promedio: {validation['avg_inflation']:.1f}x
+    - Valores máximos: {validation['max_value']:,.0f}
+    - Parámetros: α={alpha}, K={K_max}
+    """)
+
+# ============================================================
+# TABS PARA RESULTADOS
+# ============================================================
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📋 Rankings",
+    "📈 Gráfico de Subsistemas",
+    "🎯 Eje Estratégico",
+    "🔬 Análisis de Estabilidad",
+    "📊 Gráficos Adicionales",
+    "📄 Informe Ejecutivo"
+])
+
+# TAB 1: RANKINGS
+with tab1:
+    st.markdown(f"### 🏆 Ranking de Variables por Motricidad Total (α={alpha}, K={K_max})")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Variables", len(nombres))
+    col2.metric("Determinantes", len(df_all[df_all['Clasificación'] == 'Determinantes']))
+    col3.metric("Críticas", len(df_all[df_all['Clasificación'] == 'Crítico/inestable']))
+    col4.metric("Resultado", len(df_all[df_all['Clasificación'] == 'Variables resultado']))
+    
+    st.dataframe(
+        df_rank.style.background_gradient(subset=['Motricidad_total'], cmap='YlOrRd'),
+        use_container_width=True,
+        height=400
+    )
+    
+    st.markdown("#### 📊 Tabla Completa con Todas las Variables")
+    st.dataframe(
+        df_all.sort_values('Motricidad_total', ascending=False).style.background_gradient(cmap='coolwarm'),
+        use_container_width=True,
+        height=400
+    )
+
+# TAB 2: GRÁFICO DE SUBSISTEMAS
+with tab2:
+    st.markdown("### 📈 Gráfico de Subsistemas MICMAC")
+    
+    fig_subsistemas, ax_sub = plt.subplots(figsize=(16, 12))
+    
+    colors_map = {
+        'Determinantes': '#FF4444',
+        'Crítico/inestable': '#1166CC',
+        'Variables resultado': '#66BBFF',
+        'Autónomas': '#FF9944'
+    }
+    
+    colors = [colors_map[df_all.loc[var, 'Clasificación']] for var in nombres]
+    sizes = [100 if df_all.loc[var, 'Clasificación'] == 'Crítico/inestable' else 80 for var in nombres]
+    
+    scatter = ax_sub.scatter(dep_tot, mot_tot, c=colors, s=sizes, alpha=0.7, 
+                             edgecolors='black', linewidth=1.5)
+    
+    ax_sub.axvline(dep_threshold, color='black', linestyle='--', linewidth=2, alpha=0.6)
+    ax_sub.axhline(mot_threshold, color='black', linestyle='--', linewidth=2, alpha=0.6)
+    
+    max_mot = max(mot_tot)
+    max_dep = max(dep_tot)
+    
+    ax_sub.text(dep_threshold * 0.5, max_mot * 0.9, 'DETERMINANTES\n(Palancas)',
+                fontsize=13, fontweight='bold', ha='center', va='center',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="red", alpha=0.6), color='white')
+    
+    ax_sub.text(max_dep * 0.75, max_mot * 0.9, 'CRÍTICO/INESTABLE',
+                fontsize=13, fontweight='bold', ha='center', va='center',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="darkblue", alpha=0.6), color='white')
+    
+    ax_sub.text(dep_threshold * 0.5, mot_threshold * 0.3, 'AUTÓNOMAS',
+                fontsize=13, fontweight='bold', ha='center', va='center',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="orange", alpha=0.6))
+    
+    ax_sub.text(max_dep * 0.75, mot_threshold * 0.3, 'RESULTADO',
+                fontsize=13, fontweight='bold', ha='center', va='center',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.6))
+    
+    importantes_idx = order[:min(max_etiquetas, len(nombres))]
+    for i in importantes_idx:
+        ax_sub.annotate(
+            nombres[i][:25],
+            (dep_tot[i], mot_tot[i]),
+            xytext=(5, 5), textcoords='offset points',
+            fontsize=8, fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+            arrowprops=dict(arrowstyle='->', color='gray', alpha=0.5, lw=0.8)
+        )
+    
+    ax_sub.set_xlabel("Dependencia Total", fontweight='bold', fontsize=14)
+    ax_sub.set_ylabel("Motricidad Total", fontweight='bold', fontsize=14)
+    ax_sub.set_title(f"GRÁFICO DE SUBSISTEMAS MICMAC (α={alpha}, K={K_max})", 
+                    fontweight='bold', fontsize=16)
+    ax_sub.grid(True, alpha=0.3)
+    
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF4444', markersize=10, label='Determinantes'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#1166CC', markersize=10, label='Crítico/inestable'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#66BBFF', markersize=10, label='Variables resultado'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF9944', markersize=10, label='Autónomas')
+    ]
+    ax_sub.legend(handles=legend_elements, loc='upper left', fontsize=11)
+    
+    st.pyplot(fig_subsistemas)
+    
+    img_subsistemas = io.BytesIO()
+    fig_subsistemas.savefig(img_subsistemas, format='png', dpi=300, bbox_inches='tight')
+    img_subsistemas.seek(0)
+    st.download_button(
+        label="📥 Descargar Gráfico (PNG)",
+        data=img_subsistemas,
+        file_name=f"micmac_subsistemas_a{alpha}_k{K_max}.png",
+        mime="image/png"
+    )
+
+# TAB 3: EJE ESTRATÉGICO
+with tab3:
+    st.markdown("### 🎯 Gráfico del Eje de Estrategia")
+    
+    fig_estrategia, ax_est = plt.subplots(figsize=(14, 11))
+    
+    max_dep_norm = max(dep_tot) if max(dep_tot) > 0 else 1
+    max_mot_norm = max(mot_tot) if max(mot_tot) > 0 else 1
+    
+    strategic_scores = []
+    for i in range(len(nombres)):
+        x_norm = dep_tot[i] / max_dep_norm
+        y_norm = mot_tot[i] / max_mot_norm
+        dist_to_axis = abs(y_norm - x_norm) / np.sqrt(2)
+        strategic_score = (x_norm + y_norm) / 2 - dist_to_axis * 0.5
+        strategic_scores.append(strategic_score)
+    
+    strategic_scores = np.array(strategic_scores)
+    
+    colors_est = []
+    for score in strategic_scores:
+        if score > np.percentile(strategic_scores, 75):
+            colors_est.append('#CC0000')
+        elif score > np.percentile(strategic_scores, 50):
+            colors_est.append('#FF6600')
+        elif score > np.percentile(strategic_scores, 25):
+            colors_est.append('#3388BB')
+        else:
+            colors_est.append('#888888')
+    
+    sizes_est = 50 + (strategic_scores - strategic_scores.min()) / (strategic_scores.max() - strategic_scores.min()) * 150
+    
+    ax_est.scatter(dep_tot, mot_tot, c=colors_est, s=sizes_est, alpha=0.7, edgecolors='black', linewidth=1)
+    ax_est.plot([0, max_dep_norm], [0, max_mot_norm], 'r--', linewidth=3, alpha=0.8, label='Eje de estrategia')
+    
+    strategic_indices = np.argsort(strategic_scores)[-min(15, len(nombres)):]
+    for idx in strategic_indices:
+        ax_est.annotate(
+            nombres[idx][:25],
+            (dep_tot[idx], mot_tot[idx]),
+            xytext=(8, 8), textcoords='offset points',
+            fontsize=9, fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.85),
+            arrowprops=dict(arrowstyle='->', color='orange', alpha=0.7, lw=1.2)
+        )
+    
+    ax_est.set_xlabel("Dependencia Total", fontweight='bold', fontsize=14)
+    ax_est.set_ylabel("Motricidad Total", fontweight='bold', fontsize=14)
+    ax_est.set_title(f"EJE DE ESTRATEGIA (α={alpha}, K={K_max})", fontweight='bold', fontsize=16)
+    ax_est.grid(True, alpha=0.3)
+    ax_est.legend(fontsize=12)
+    
+    st.pyplot(fig_estrategia)
+    
+    st.markdown("#### 🎯 Top 15 Variables Estratégicas")
+    df_estrategicas = pd.DataFrame({
+        'Variable': [nombres[i] for i in strategic_indices[::-1]],
+        'Motricidad': [mot_tot[i] for i in strategic_indices[::-1]],
+        'Dependencia': [dep_tot[i] for i in strategic_indices[::-1]],
+        'Puntuación': [strategic_scores[i] for i in strategic_indices[::-1]],
+        'Clasificación': [df_all.loc[nombres[i], 'Clasificación'] for i in strategic_indices[::-1]]
+    })
+    st.dataframe(df_estrategicas.style.background_gradient(subset=['Puntuación'], cmap='RdYlGn'), 
+                use_container_width=True)
+
+# TAB 4: ANÁLISIS DE ESTABILIDAD
+with tab4:
+    st.markdown("### 🔬 Análisis de Sensibilidad y Estabilidad")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        alphas_test = st.multiselect(
+            "Valores de α:",
+            options=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+            default=[0.3, 0.5, 0.7]
+        )
+    with col2:
+        Ks_test = st.multiselect(
+            "Valores de K:",
+            options=list(range(2, 13)),
+            default=[3, 6, 9]
+        )
+    
+    if st.button("🔄 Ejecutar Análisis", type="primary"):
+        with st.spinner("Calculando..."):
+            df_stability = analyze_stability(M, alphas_test, Ks_test)
+            
+            for i in range(1, 6):
+                df_stability[f'Variable_Top{i}'] = df_stability[f'top_{i}'].apply(lambda idx: nombres[idx])
+            
+            st.success(f"✅ {len(df_stability)} configuraciones probadas")
+            
+            display_cols = ['alpha', 'K'] + [f'Variable_Top{i}' for i in range(1, 6)]
+            st.dataframe(df_stability[display_cols], use_container_width=True, height=400)
+            
+            st.markdown("#### 🏆 Variables Más Frecuentes en Top-5")
+            all_tops = []
+            for col in [f'Variable_Top{i}' for i in range(1, 6)]:
+                all_tops.extend(df_stability[col].tolist())
+            
+            from collections import Counter
+            freq_counter = Counter(all_tops)
+            df_freq = pd.DataFrame(freq_counter.most_common(15), columns=['Variable', 'Frecuencia'])
+            df_freq['Porcentaje'] = (df_freq['Frecuencia'] / len(df_stability) * 100).round(1)
+            
+            st.dataframe(df_freq.style.background_gradient(subset=['Frecuencia'], cmap='Greens'), 
+                        use_container_width=True)
+
+# TAB 5: GRÁFICOS ADICIONALES
+with tab5:
+    st.markdown("### 📊 Gráficos Complementarios")
+    
+    st.markdown("#### 📊 Top 15 por Motricidad")
+    fig_bar, ax_bar = plt.subplots(figsize=(14, 8))
+    
+    top_15_idx = order[:15]
+    top_15_vars = [nombres[i] for i in top_15_idx]
+    top_15_mot = mot_tot[top_15_idx]
+    
+    colors_bar = []
+    for var in top_15_vars:
+        clf = df_all.loc[var, 'Clasificación']
+        if clf == 'Crítico/inestable':
+            colors_bar.append('#1166CC')
+        elif clf == 'Determinantes':
+            colors_bar.append('#FF4444')
+        elif clf == 'Variables resultado':
+            colors_bar.append('#66BBFF')
+        else:
+            colors_bar.append('#FF9944')
+    
+    y_pos = np.arange(len(top_15_vars))
+    ax_bar.barh(y_pos, top_15_mot, color=colors_bar, edgecolor='black')
+    ax_bar.set_yticks(y_pos)
+    ax_bar.set_yticklabels(top_15_vars)
+    ax_bar.invert_yaxis()
+    ax_bar.set_xlabel("Motricidad Total", fontweight='bold')
+    ax_bar.set_title(f"Top 15 Variables (α={alpha}, K={K_max})", fontweight='bold')
+    ax_bar.grid(axis='x', alpha=0.3)
+    
+    for i, val in enumerate(top_15_mot):
+        ax_bar.text(val, i, f' {val:.0f}', va='center', fontsize=9, fontweight='bold')
+    
+    st.pyplot(fig_bar)
+
+# TAB 6: INFORME EJECUTIVO
+with tab6:
+    st.markdown("### 📄 Informe Ejecutivo")
+    
+    if st.button("📝 Generar Informe Completo", type="primary"):
+        fecha_actual = datetime.now().strftime("%d de %B de %Y")
         
-        **Calidad de resultados:**
-        - Inflación promedio: {validation['avg_inflation']:.1f}x
-        - Valores máximos: {validation['max_value']:,.0f}
-        - Parámetros: α={alpha}, K={K_max}
-        """)
+        top_5_motoras = ranking_vars[:5]
+        count_determinantes = len(df_all[df_all['Clasificación'] == 'Determinantes'])
+        count_criticas = len(df_all[df_all['Clasificación'] == 'Crítico/inestable'])
+        count_resultado = len(df_all[df_all['Clasificación'] == 'Variables resultado'])
+        count_autonomas = len(df_all[df_all['Clasificación'] == 'Autónomas'])
+        
+        informe = f"""# INFORME EJECUTIVO - ANÁLISIS MICMAC
+
+**Fecha:** {fecha_actual}  
+**Parámetros:** α={alpha}, K={K_max}, Variables={len(nombres)}
+
+## RESUMEN
+
+- **{count_criticas}** variables críticas
+- **{count_determinantes}** variables determinantes
+- **{count_resultado}** variables resultado
+- **{count_autonomas}** variables autónomas
+
+## TOP 5 VARIABLES MOTORAS
+
+{chr(10).join([f"{i+1}. {var}" for i, var in enumerate(top_5_motoras)])}
+
+---
+*Generado por MICMAC Interactivo v3.0*
+"""
+        
+        st.success("✅ Informe generado")
+        
+        st.download_button(
+            label="📄 Descargar Informe",
+            data=informe.encode('utf-8'),
+            file_name=f"informe_micmac_{fecha_actual.replace(' ', '_')}.md",
+            mime="text/markdown",
+            type="primary"
+        )
+        
+        with st.expander("👁️ Vista Previa"):
+            st.markdown(informe)
+
 
 # ============================================================
 # TABS PARA RESULTADOS

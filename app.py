@@ -1072,15 +1072,15 @@ else:
 # TAB 6
 with tab6:
     # ============================================================
-# GENERADOR DE INFORME DE INTELIGENCIA CON PDF COMPLETO
-# ============================================================
+    # GENERADOR DE INFORME DE INTELIGENCIA CON PDF COMPLETO
+    # ============================================================
 
-st.markdown("---")
-st.markdown("### 📄 Generador de Informe de Inteligencia")
-st.caption("Crea un informe PDF profesional con todos los gráficos y análisis")
+    st.markdown("---")
+    st.markdown("### 📄 Generador de Informe de Inteligencia")
+    st.caption("Crea un informe PDF profesional con todos los gráficos y análisis")
 
-if st.button("🎯 Generar Informe Completo (PDF)", type="primary"):
-    with st.spinner("Generando informe PDF con todos los gráficos... Por favor espera."):
+    if st.button("🎯 Generar Informe Completo (PDF)", type="primary"):
+        with st.spinner("Generando informe PDF con todos los gráficos... Por favor espera."):
         
         # Importar PdfPages para PDF multipágina
         from matplotlib.backends.backend_pdf import PdfPages

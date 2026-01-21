@@ -3,7 +3,7 @@ MICMAC PRO - Análisis Estructural con Conversor Integrado
 Aplicación completa para análisis prospectivo de matrices de influencias
 Incluye conversor de matrices con metadata a formato MICMAC
 
-Autor: JETLEX Strategic Consulting / Martín Ezequiel CUELLO
+Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 """
 
 import streamlit as st
@@ -436,6 +436,6 @@ st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
 <p><strong>MICMAC PRO</strong> - JETLEX Strategic Consulting</p>
-<p>Martín Ezequiel CUELLO © 2025</p>
+<p>Martín Pratto Chiarella © 2025</p>
 </div>
 """, unsafe_allow_html=True)

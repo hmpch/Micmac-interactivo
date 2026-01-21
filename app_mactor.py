@@ -224,7 +224,7 @@ with st.sidebar:
     st.markdown("""
     <div style="text-align: center; font-size: 0.8rem; color: #666;">
     <strong>JETLEX Strategic Consulting</strong><br>
-    Martin E. CUELLO - 2025
+    Martin Pratto Chiarella - 2025
     </div>
     """, unsafe_allow_html=True)
 

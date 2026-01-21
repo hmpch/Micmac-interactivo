@@ -1,52 +1,160 @@
-# 📊 Análisis MICMAC Interactivo
+# 🎯 JETLEX - Suite de Análisis Prospectivo by Martin Pratto Chiarella
 
-![Version](https://img.shields.io/badge/version-3.0-blue)
-![Python](https://img.shields.io/badge/python-3.8%2B-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-validated-success)
+![Version](https://img.shields.io/badge/version-4.0-blue)
+![Python](https://img.shields.io/badge/python-3.8+-green)
+![License](https://img.shields.io/badge/license-MIT-orange)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-**Implementación open-source del método MICMAC (Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación)**
+**Suite completa de herramientas open-source para análisis estructural y estratégico**
 
-Una herramienta interactiva para análisis estructural de sistemas complejos basada en la metodología de **Michel Godet (1990)**. 
-
----
-
-## 🎯 Características Principales
-
-### ✨ Funcionalidades Core
-
-- ✅ **Análisis MICMAC completo:** Cálculo de influencias directas, indirectas y totales
-- 📊 **Clasificación en 4 cuadrantes:** Determinantes, Crítico/inestable, Resultado, Autónomas
-- 🎯 **Eje estratégico:** Identificación de variables con máximo valor estratégico
-- 🔬 **Análisis de estabilidad:** Evaluación de sensibilidad a parámetros α y K
-- 📈 **Visualizaciones interactivas:** Gráficos profesionales de alta calidad
-- 📄 **Informes ejecutivos automatizados:** Generación de reportes completos en Markdown
-
-### 🚀 Ventajas sobre el MICMAC Propietario
-
-| Característica | Esta Herramienta | MICMAC Oficial |
-|----------------|------------------|----------------|
-| **Algoritmo de propagación** | ✅ Idéntico (validado) | Propietario |
-| **Análisis de estabilidad** | ✅ Completo | Incluido |
-| **Visualizaciones** | ✅ Interactivas mejoradas | Estándar |
-| **Reproducibilidad** | ✅ 100% (código abierto) | Limitada |
-| **Costo** | ✅ Gratuito | Licencia comercial |
-| **Personalización** | ✅ Total | No disponible |
-| **Análisis MACTOR** | ❌ No incluido | Incluido |
-| **Análisis morfológico** | ❌ No incluido | Incluido |
+Implementación de los métodos **MICMAC** y **MACTOR** desarrollados por Michel Godet, adaptados para análisis prospectivo en sistemas complejos.
 
 ---
 
-## 📋 Requisitos Previos
+## 🚀 Aplicaciones Disponibles
 
-### Software
+| Aplicación | Descripción | Estado |
+|------------|-------------|--------|
+| **MICMAC Original** | Análisis estructural clásico | ✅ Operativo |
+| **MICMAC PRO** | Versión mejorada con conversor integrado | ✅ Operativo |
+| **MACTOR** | Análisis de juego de actores | ✅ Operativo |
 
-- **Python 3.8 o superior**
-- Navegador web moderno (Chrome, Firefox, Edge)
+### 🔗 Acceso Directo
 
-### Formato de Datos
+- **MICMAC Interactivo:** [https://micmac-interactivo-fvg2ckpsahhgzc7ywtfdel.streamlit.app/](https://micmac-interactivo-fvg2ckpsahhgzc7ywtfdel.streamlit.app/)
+- **MICMAC PRO:** *(Actualizar con tu URL de Streamlit)*
+- **MACTOR:** *(Actualizar con tu URL de Streamlit)*
 
-Tu archivo Excel debe contener:
+---
+
+## 📊 Características por Aplicación
+
+### 1️⃣ MICMAC Original
+
+Implementación completa del método de Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación.
+
+| Funcionalidad | Descripción |
+|---------------|-------------|
+| ✅ Análisis MICMAC completo | Cálculo de influencias directas, indirectas y totales |
+| 📊 Clasificación en 4 cuadrantes | Determinantes, Crítico/inestable, Resultado, Autónomas |
+| 🎯 Eje estratégico | Identificación de variables con máximo valor estratégico |
+| 🔬 Análisis de estabilidad | Evaluación de sensibilidad a parámetros α y K |
+| 📈 Visualizaciones interactivas | Gráficos profesionales de alta calidad |
+| 📄 Informes ejecutivos | Generación de reportes completos en Markdown |
+
+### 2️⃣ MICMAC PRO (Nuevo)
+
+Versión mejorada que incluye conversor de matrices con metadata.
+
+| Funcionalidad | Descripción |
+|---------------|-------------|
+| 🔄 **Conversor integrado** | Procesa matrices Excel con columnas de metadata (Tipo, Nombre, Código) |
+| 📥 Carga flexible | Acepta múltiples formatos de entrada |
+| 🏷️ Detección automática | Extrae códigos originales (P1, E2, S3, T4, L5...) |
+| 📊 Análisis MIDI | Matriz de Influencias Directas e Indirectas |
+| 🎨 Visualizaciones Plotly | Gráficos interactivos modernos |
+| 💾 Exportación Excel | Múltiples hojas con todos los resultados |
+
+**¿Cuándo usar MICMAC PRO?**
+
+Si tu matriz tiene esta estructura:
+
+```
+| Tipo       | Variable                    | Código | P1 | P6 | E1 | ...
+|------------|------------------------------|--------|----|----|----|----|
+| Políticas  | Descripción de la variable  | P1     | 0  | 2  | 1  | ...
+| Económicas | Otra descripción            | E1     | 1  | 0  | 0  | ...
+```
+
+MICMAC PRO la convierte automáticamente al formato requerido.
+
+### 3️⃣ MACTOR (Nuevo)
+
+Implementación completa del Método de Análisis de Actores - Tácticas, Objetivos y Recomendaciones.
+
+| Matriz | Descripción | Tipo |
+|--------|-------------|------|
+| **MAO** | Influencia de actores sobre objetivos | Input (0-4) |
+| **1MAO** | Posición de actores frente a objetivos | Input (-1, 0, +1) |
+| **2MAO** | Prioridad de objetivos para actores | Input (0-4) |
+| **MID** | Influencias directas entre actores | Input (0-4) |
+| **MIDI** | Influencias directas e indirectas | Calculada |
+| **3MAO** | Implicación de actores en objetivos | Calculada |
+| **4MAO** | Movilización de actores sobre objetivos | Calculada |
+
+**Análisis incluidos:**
+
+- 🤝 Matriz de convergencias (alianzas potenciales)
+- ⚔️ Matriz de divergencias (conflictos potenciales)
+- 📊 Balance de relaciones actor-actor
+- 🕸️ Red de interacciones visualizada
+- 🎯 Clasificación de actores: Motrices, Enlace, Dominados, Autónomos
+
+---
+
+## 📋 Comparativa con Software Propietario
+
+| Característica | Suite JETLEX | MICMAC Oficial |
+|----------------|--------------|----------------|
+| Algoritmo de propagación | ✅ Idéntico (validado) | Propietario |
+| Análisis de estabilidad | ✅ Completo | Incluido |
+| Visualizaciones | ✅ Interactivas mejoradas | Estándar |
+| Reproducibilidad | ✅ 100% (código abierto) | Limitada |
+| Costo | ✅ **Gratuito** | Licencia comercial |
+| Personalización | ✅ Total | No disponible |
+| Análisis MACTOR | ✅ **Incluido** | Incluido |
+| Conversor de matrices | ✅ **Incluido** | No disponible |
+| Análisis morfológico | ❌ No incluido | Incluido |
+
+---
+
+## 🔧 Instalación
+
+### Opción 1: Uso Online (Recomendado)
+
+Accede directamente a las aplicaciones desplegadas en Streamlit Cloud sin necesidad de instalación.
+
+### Opción 2: Instalación Local
+
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/jetlex-analisis-prospectivo.git
+cd jetlex-analisis-prospectivo
+
+# 2. Crear entorno virtual (recomendado)
+python -m venv venv
+source venv/bin/activate  # En Windows: venv\Scripts\activate
+
+# 3. Instalar dependencias
+pip install -r requirements.txt
+
+# 4. Ejecutar la aplicación deseada
+streamlit run app.py              # MICMAC Original
+streamlit run app_micmac_pro.py   # MICMAC PRO
+streamlit run app_mactor.py       # MACTOR
+```
+
+### Dependencias
+
+```txt
+streamlit==1.31.0
+pandas==2.1.4
+numpy==1.26.3
+plotly==5.18.0
+openpyxl==3.1.2
+scipy==1.11.4
+networkx==3.2.1
+matplotlib==3.8.2
+seaborn==0.13.0
+```
+
+---
+
+## 📖 Guía de Uso
+
+### MICMAC - Formato de Datos
+
+Tu archivo Excel debe contener una matriz cuadrada:
 
 ```
 | Variable | Var1 | Var2 | Var3 | ... |
@@ -61,83 +169,41 @@ Tu archivo Excel debe contener:
 - **Valores:** Intensidad de influencia (típicamente 0-4)
 - **Diagonal:** Se pone automáticamente a 0
 
----
+### MICMAC PRO - Formato con Metadata
 
-## 🚀 Instalación y Uso
+Si tu matriz incluye columnas adicionales de metadata:
 
-### Opción 1: Instalación Local
-
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/micmac-interactivo.git
-cd micmac-interactivo
-
-# 2. Crear entorno virtual (recomendado)
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-
-# 3. Instalar dependencias
-pip install -r requirements.txt
-
-# 4. Ejecutar la aplicación
-streamlit run app.py
+```
+| Tipo       | Nombre Completo              | Código | P1 | P6 | E1 |
+|------------|------------------------------|--------|----|----|----| 
+| Políticas  | Regulación ambiental         | P1     | 0  | 2  | 1  |
+| Políticas  | Política de sostenibilidad   | P6     | 1  | 0  | 2  |
+| Económicas | Inversión en infraestructura | E1     | 2  | 1  | 0  |
 ```
 
-La aplicación se abrirá automáticamente en `http://localhost:8501`
+El conversor extraerá automáticamente los códigos y generará la matriz limpia.
 
-### Opción 2: Uso Rápido (Sin Instalación)
+### MACTOR - Configuración de Actores y Objetivos
 
-Si tienes Python y pip instalados:
+1. **Define actores:** Stakeholders del sistema (gobierno, empresas, ONG, etc.)
+2. **Define objetivos:** Metas estratégicas en disputa
+3. **Completa matrices:**
+   - MAO: ¿Cuánta influencia tiene cada actor sobre cada objetivo? (0-4)
+   - 1MAO: ¿El actor está a favor (+1), neutral (0) o en contra (-1) del objetivo?
+   - 2MAO: ¿Qué prioridad tiene el objetivo para el actor? (0-4)
+   - MID: ¿Cuánta influencia ejerce cada actor sobre los demás? (0-4)
 
-```bash
-pip install streamlit pandas numpy matplotlib seaborn openpyxl
-streamlit run app.py
-```
+### Parámetros MICMAC
 
----
+| Parámetro | Descripción | Valores Recomendados |
+|-----------|-------------|---------------------|
+| **α (Alpha)** | Factor de atenuación de influencias indirectas | 0.5-0.8 |
+| **K** | Profundidad de análisis (potencias de la matriz) | 2-5 o automático |
 
-## 📖 Guía de Uso
-
-### Paso 1: Carga tu Matriz
-
-1. Prepara tu matriz MICMAC en Excel (formato cuadrado)
-2. Sube el archivo mediante el botón "Browse files"
-3. Selecciona la hoja correcta si hay múltiples hojas
-4. Verifica la vista previa de los datos cargados
-
-### Paso 2: Configura Parámetros
-
-#### α (Alpha) - Factor de Atenuación
-
-Controla el peso de las influencias indirectas:
-
-- **α = 1.0:** Sin atenuación (todas las rutas igual peso)
-- **α = 0.5:** Atenuación moderada **(RECOMENDADO)**
-- **α = 0.2:** Atenuación fuerte (solo rutas cortas)
-
-#### K - Profundidad de Análisis
-
-Número de órdenes indirectos a considerar (M, M², M³, ..., M^K):
-
-- **K automático:** La herramienta detecta cuando el ranking se estabiliza **(RECOMENDADO)**
-- **K manual:** Define manualmente (típicamente 5-9)
-
-### Paso 3: Explora Resultados
-
-La aplicación ofrece 6 pestañas principales:
-
-1. **📋 Rankings:** Listado ordenado por motricidad total
-2. **📈 Gráfico de Subsistemas:** Visualización de cuadrantes MICMAC
-3. **🎯 Eje Estratégico:** Variables con máximo valor estratégico
-4. **🔬 Análisis de Estabilidad:** Sensibilidad a parámetros
-5. **📊 Gráficos Adicionales:** Barras, heatmaps, distribuciones
-6. **📄 Informe Ejecutivo:** Reporte completo automatizado
-
-### Paso 4: Descarga Resultados
-
-- **Excel:** Tablas consolidadas con ranking y datos completos
-- **PNG:** Gráficos de alta resolución (300 DPI)
-- **Markdown/TXT:** Informe ejecutivo completo
+**Interpretación de α:**
+- α = 1.0: Sin atenuación (todas las rutas con igual peso)
+- α = 0.5: Atenuación moderada (recomendado)
+- α = 0.2: Atenuación fuerte (solo rutas cortas)
 
 ---
 
@@ -145,11 +211,11 @@ La aplicación ofrece 6 pestañas principales:
 
 ### Fundamento Teórico
 
-El método MICMAC fue desarrollado por **Michel Godet** en 1990 como herramienta de la prospectiva estratégica francesa. Permite identificar variables clave en sistemas complejos mediante análisis de influencias directas e indirectas.
+El método **MICMAC** fue desarrollado por Michel Godet en 1990 como herramienta de la prospectiva estratégica francesa. Permite identificar variables clave en sistemas complejos mediante análisis de influencias directas e indirectas.
 
-### Algoritmo Implementado
+El método **MACTOR** (1991) complementa el análisis estructural con el análisis del juego de actores, identificando convergencias, divergencias y estrategias de alianza.
 
-#### 1. Matriz Total (Propagación)
+### Algoritmo MICMAC - Propagación
 
 ```
 M_total = M + α·M² + α²·M³ + ... + α^(K-1)·M^K
@@ -160,19 +226,19 @@ Donde:
 - **α:** Factor de atenuación exponencial
 - **K:** Profundidad máxima de análisis
 
-#### 2. Cálculo de Indicadores
+### Cálculo de Indicadores
 
-**Motricidad (capacidad de influir):**
+**Motricidad** (capacidad de influir):
 ```
 Motricidad_i = Σ(j=1 to n) M_total[i,j]
 ```
 
-**Dependencia (susceptibilidad a ser influido):**
+**Dependencia** (susceptibilidad a ser influido):
 ```
 Dependencia_j = Σ(i=1 to n) M_total[i,j]
 ```
 
-#### 3. Clasificación en Cuadrantes
+### Clasificación en Cuadrantes
 
 | Cuadrante | Motricidad | Dependencia | Interpretación |
 |-----------|------------|-------------|----------------|
@@ -180,6 +246,23 @@ Dependencia_j = Σ(i=1 to n) M_total[i,j]
 | **Crítico/inestable** | Alta | Alta | Variables clave (inestables) |
 | **Resultado** | Baja | Alta | Indicadores de impacto |
 | **Autónomas** | Baja | Baja | Variables independientes |
+
+### Algoritmo MACTOR
+
+**MIDI (Influencias Directas e Indirectas):**
+```
+MIDI = MID + MID² + MID³ + ... + MID^K
+```
+
+**3MAO (Implicación en objetivos):**
+```
+3MAO = MIDI × MAO
+```
+
+**4MAO (Movilización sobre objetivos):**
+```
+4MAO = MIDI × (1MAO ⊙ 2MAO)
+```
 
 ### Validación
 
@@ -193,19 +276,21 @@ La implementación ha sido validada comparando resultados con el software MICMAC
 
 ## 📚 Referencias Bibliográficas
 
-### Fundamental
+### Fundamentales
 
-1. **Godet, M. (1990).** *From Anticipation to Action: A Handbook of Strategic Prospective.* UNESCO Publishing.
+- Godet, M. (1990). *From Anticipation to Action: A Handbook of Strategic Prospective*. UNESCO Publishing.
 
-2. **Godet, M., & Durance, P. (2011).** *Strategic Foresight for Corporate and Regional Development.* UNESCO.
+- Godet, M., & Durance, P. (2011). *Strategic Foresight for Corporate and Regional Development*. UNESCO.
 
-3. **Arcade, J., Godet, M., Meunier, F., & Roubelat, F. (2004).** *Structural analysis with the MICMAC method.* Futures Research Methodology, AC/UNU Millennium Project.
+- Arcade, J., Godet, M., Meunier, F., & Roubelat, F. (2004). Structural analysis with the MICMAC method. *Futures Research Methodology*, AC/UNU Millennium Project.
 
-### Complementaria
+- Godet, M. (1991). *Actors' moves and strategies: The MACTOR method*. Futures Research Methodology.
 
-4. **Godet, M. (2000).** *The Art of Scenarios and Strategic Planning.* Technological Forecasting and Social Change, 65(1), 3-22.
+### Complementarias
 
-5. **Asan, S. S., & Asan, U. (2007).** *Qualitative cross-impact analysis with time consideration.* Technological Forecasting and Social Change, 74(5), 627-644.
+- Godet, M. (2000). The Art of Scenarios and Strategic Planning. *Technological Forecasting and Social Change*, 65(1), 3-22.
+
+- Asan, S. S., & Asan, U. (2007). Qualitative cross-impact analysis with time consideration. *Technological Forecasting and Social Change*, 74(5), 627-644.
 
 ---
 
@@ -214,54 +299,63 @@ La implementación ha sido validada comparando resultados con el software MICMAC
 ### Citación Sugerida
 
 ```bibtex
-@software{pratto2025micmac,
-  author = {Pratto, Martín},
-  title = {Análisis MICMAC Interactivo: Implementación Open-Source},
+@software{cuello2025jetlex,
+  author = {Cuello, Martín Ezequiel},
+  title = {JETLEX Suite de Análisis Prospectivo: MICMAC y MACTOR},
   year = {2025},
-  version = {3.0},
-  url = {https://github.com/tu-usuario/micmac-interactivo}
+  version = {4.0},
+  organization = {JETLEX Strategic Consulting},
+  url = {https://github.com/tu-usuario/jetlex-analisis-prospectivo}
 }
 ```
 
 ### Casos de Uso Académico
 
-Esta herramienta es apropiada para:
+Esta suite es apropiada para:
 
 - ✅ Trabajos de maestría y doctorado en prospectiva estratégica
 - ✅ Análisis de sistemas complejos en investigación
 - ✅ Proyectos de consultoría estratégica
 - ✅ Estudios de inteligencia competitiva
 - ✅ Análisis de riesgos sistémicos
+- ✅ Gestión de stakeholders
+- ✅ Planificación estratégica sectorial
 
 ### Limitaciones Declaradas
 
-**Para uso académico riguroso, declarar:**
+Para uso académico riguroso, declarar:
 
-1. Esta implementación replica el **núcleo algorítmico** del MICMAC oficial
-2. No incluye análisis MACTOR (estrategia de actores) ni análisis morfológico
-3. Validada con >98% de concordancia en casos de prueba estándar
-4. Resultados deben complementarse con validación experta del dominio
+> Esta implementación replica el núcleo algorítmico de los métodos MICMAC y MACTOR oficiales. No incluye análisis morfológico de escenarios. Validada con >98% de concordancia en casos de prueba estándar. Los resultados deben complementarse con validación experta del dominio.
 
 ---
 
 ## 🛠️ Estructura del Proyecto
 
 ```
-micmac-interactivo/
+jetlex-analisis-prospectivo/
 │
-├── app.py                  # Aplicación principal Streamlit
-├── requirements.txt        # Dependencias Python
-├── README.md              # Este archivo
+├── 📱 APLICACIONES
+│   ├── app.py                    # MICMAC Original
+│   ├── app_micmac_pro.py         # MICMAC PRO con conversor
+│   └── app_mactor.py             # MACTOR completo
 │
-├── examples/              # Ejemplos de matrices
-│   └── ejemplo_40vars.xlsx
+├── 📋 DOCUMENTACIÓN
+│   ├── README.md                 # Este archivo
+│   ├── GUIA_USO.md              # Guía detallada de uso
+│   └── METODOLOGIA.md           # Explicación metodológica
 │
-├── docs/                  # Documentación adicional
-│   ├── metodologia.md
-│   └── casos_uso.md
+├── 🔧 CONFIGURACIÓN
+│   ├── requirements.txt          # Dependencias Python
+│   └── .streamlit/
+│       └── config.toml          # Configuración de tema
 │
-└── tests/                 # Tests de validación (opcional)
-    └── test_micmac.py
+├── 📊 EJEMPLOS
+│   └── data/
+│       ├── ejemplo_micmac.xlsx   # Matriz de ejemplo MICMAC
+│       └── ejemplo_mactor.xlsx   # Matrices de ejemplo MACTOR
+│
+└── 🌐 HERRAMIENTAS WEB
+    └── conversor-micmac-PRO.html # Conversor standalone
 ```
 
 ---
@@ -277,13 +371,21 @@ micmac-interactivo/
 - Verifica que las columnas tengan los mismos nombres que las filas
 - Asegúrate de que no haya celdas vacías en los nombres
 
-### Error: Gráficos no se muestran correctamente
+### Error: Variables aparecen como "O" en lugar de categorías
 
-**Causa:** Versión incompatible de matplotlib.
+**Causa:** El conversor no pudo detectar las categorías correctas.
+
+**Solución:**
+- Usa MICMAC PRO que procesa matrices con metadata (Tipo, Nombre, Código)
+- Asegúrate de que tu archivo original tenga las 3 columnas de metadata
+
+### Gráficos no se muestran correctamente
+
+**Causa:** Versión incompatible de matplotlib o plotly.
 
 **Solución:**
 ```bash
-pip install --upgrade matplotlib
+pip install --upgrade matplotlib plotly
 ```
 
 ### Rendimiento lento con matrices grandes
@@ -300,28 +402,28 @@ pip install --upgrade matplotlib
 ¡Las contribuciones son bienvenidas! Por favor:
 
 1. Fork el repositorio
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
+2. Crea una rama para tu feature (`git checkout -b feature/NuevaFuncionalidad`)
+3. Commit tus cambios (`git commit -m 'Agregar nueva funcionalidad'`)
+4. Push a la rama (`git push origin feature/NuevaFuncionalidad`)
 5. Abre un Pull Request
 
 ### Ideas para Contribuir
 
-- [ ] Implementar análisis MACTOR (estrategia de actores)
 - [ ] Agregar análisis morfológico de escenarios
-- [ ] Mejorar visualizaciones con Plotly (interactividad)
+- [ ] Implementar análisis de convergencias/divergencias completo en MACTOR
+- [ ] Mejorar visualizaciones de redes con NetworkX
 - [ ] Tests automatizados de validación
-- [ ] Traducción a otros idiomas
+- [ ] Traducción a otros idiomas (inglés, portugués)
 - [ ] API REST para integración externa
+- [ ] Exportación a PDF de informes
 
 ---
 
 ## 📝 Licencia
 
-Este proyecto está licenciado bajo MIT License - ver archivo [LICENSE](LICENSE) para detalles.
+Este proyecto está licenciado bajo **MIT License** - ver archivo LICENSE para detalles.
 
-### Notas sobre Licencia
-
+**Notas sobre Licencia:**
 - ✅ Uso libre para fines académicos y comerciales
 - ✅ Modificación y distribución permitidas
 - ✅ Sin garantías (AS IS)
@@ -331,64 +433,57 @@ Este proyecto está licenciado bajo MIT License - ver archivo [LICENSE](LICENSE)
 
 ## 👤 Autor
 
-**Martín Pratto**
+**Martín Ezequiel CUELLO**
 
-- GitHub: [@hmpch](https://github.com/hmpch)
-- Email: prattoabogados@gmail.com
+- **Organización:** JETLEX Strategic Consulting
+- **Especialización:** Consultoría Aeronáutica, Inteligencia Estratégica, Análisis Prospectivo
+- **GitHub:** [@tu-usuario](https://github.com/tu-usuario)
+- **LinkedIn:** [Martín Cuello](https://linkedin.com/in/tu-perfil)
 
 ---
 
 ## 🙏 Agradecimientos
 
-- **Michel Godet:** Creador de la metodología MICMAC original
+- **Michel Godet:** Creador de las metodologías MICMAC y MACTOR
 - **UNESCO:** Por promover herramientas de prospectiva estratégica
 - **Comunidad de prospectiva francesa:** Por décadas de investigación metodológica
 - **Streamlit:** Por el excelente framework de aplicaciones interactivas
-
----
-
-## 📊 Estadísticas del Proyecto
-
-![GitHub stars](https://img.shields.io/github/stars/tu-usuario/micmac-interactivo?style=social)
-![GitHub forks](https://img.shields.io/github/forks/tu-usuario/micmac-interactivo?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/tu-usuario/micmac-interactivo?style=social)
+- **Martín Pratto:** Desarrollo inicial de la implementación MICMAC
 
 ---
 
 ## 🔮 Roadmap
 
-### Versión 3.1 (Q2 2025)
-
-- [ ] Análisis MACTOR básico
+### Versión 4.1 (Q1 2025)
+- [x] ~~Análisis MACTOR completo~~
+- [x] ~~Conversor de matrices con metadata~~
 - [ ] Exportación a PDF de informes
 - [ ] Comparación de múltiples escenarios
 
-### Versión 4.0 (Q4 2025)
-
+### Versión 5.0 (Q3 2025)
 - [ ] Análisis morfológico completo
 - [ ] API REST
-- [ ] Visualizaciones Plotly interactivas
 - [ ] Integración con bases de datos
+- [ ] Dashboard ejecutivo unificado
 
 ---
 
 ## ⚠️ Disclaimer Académico
 
-Esta herramienta es una implementación independiente del método MICMAC basada en literatura publicada. No está afiliada con el software MICMAC oficial ni con la institución creadora original.
+Esta suite de herramientas es una implementación independiente de los métodos MICMAC y MACTOR basada en literatura publicada. No está afiliada con el software MICMAC oficial ni con la institución creadora original.
 
 Para trabajos académicos que requieran el software propietario oficial, consultar:
 - **LIPSOR** (Laboratoire d'Investigation en Prospective, Stratégie et Organisation)
-- Website: http://www.laprospective.fr
-
----
-
-**¿Preguntas? ¿Problemas? ¿Sugerencias?**
-
-Abre un [Issue](https://github.com/tu-usuario/micmac-interactivo/issues) o contacta directamente.
+- Website: [http://www.laprospective.fr](http://www.laprospective.fr)
 
 ---
 
 <div align="center">
-  <p><strong>Desarrollado con ❤️ para la comunidad de prospectiva estratégica</strong></p>
-  <p><em>Análisis MICMAC Interactivo v3.0 • 2025</em></p>
+
+**JETLEX Strategic Consulting** | Análisis Prospectivo y Estratégico
+
+*Desarrollado para la Maestría en Inteligencia Estratégica*
+
+© 2025 Martín Ezequiel CUELLO - Todos los derechos reservados
+
 </div>

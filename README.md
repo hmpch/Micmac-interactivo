@@ -484,6 +484,6 @@ Para trabajos académicos que requieran el software propietario oficial, consult
 
 *Desarrollado para la Maestría en Inteligencia Estratégica*
 
-© 2025 Martín Ezequiel CUELLO - Todos los derechos reservados
+© 2025 Martín Pratto Chiarella - Todos los derechos reservados
 
 </div>

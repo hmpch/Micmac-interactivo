@@ -2,7 +2,7 @@
 MACTOR - Metodo de Analisis de Actores
 Matriz de Alianzas y Conflictos: Tacticas, Objetivos y Recomendaciones
 
-Autor: JETLEX Strategic Consulting / Martin Ezequiel CUELLO
+Autor: JETLEX Strategic Consulting / Martin Pratto Chiarella
 Basado en el metodo de Michel Godet
 Version: 2.0 - Con instrucciones completas
 """
@@ -1123,7 +1123,7 @@ st.markdown("""
     <p>Basado en la metodologia de <strong>Michel Godet</strong> (1991)</p>
     <hr style="width: 50%; margin: 1rem auto;">
     <p>Desarrollado por <strong>JETLEX Strategic Consulting</strong></p>
-    <p>Martin Ezequiel CUELLO - 2025</p>
+    <p>Martin Pratto Chiarella - 2025</p>
     <p style="font-size: 0.8rem;">Herramienta open-source para analisis prospectivo</p>
 </div>
 """, unsafe_allow_html=True)

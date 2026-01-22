@@ -2,7 +2,7 @@
 MICMAC PRO - Analisis Estructural con Carga Robusta de Archivos
 Aplicacion completa para analisis prospectivo de matrices de influencias
 
-Autor: JETLEX Strategic Consulting / Martin Pratto Chiarella
+Autor: JETLEX Strategic Consulting / Martin Pratto Chiarella 
 Basado en la metodologia de Michel Godet (LIPSOR)
 Version: 2.1 - Carga robusta de archivos + nomenclatura oficial
 """

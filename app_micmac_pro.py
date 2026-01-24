@@ -4,7 +4,7 @@ Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
 Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
-Versión: 4.2 - Corrección terminológica (Variables Clave) + Fix TypeError
+Versión: 4.4 - Procesador robusto de matrices Excel
 """
 
 import streamlit as st
@@ -44,27 +44,6 @@ st.markdown("""
         border-left: 4px solid #1f77b4;
         margin: 1rem 0;
     }
-    .warning-box {
-        background-color: #fff3e0;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #ff9800;
-        margin: 1rem 0;
-    }
-    .success-box {
-        background-color: #e8f5e9;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #4caf50;
-        margin: 1rem 0;
-    }
-    .metric-card {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,20 +54,18 @@ st.markdown("""
 def calcular_midi(M, alpha=0.5, K=3):
     """
     Calcula la Matriz de Influencias Directas e Indirectas (MIDI)
-    
-    Fórmula: MIDI = M + α·M² + α²·M³ + ... + α^(K-1)·M^K
     """
+    M = np.array(M, dtype=float)
     n = M.shape[0]
-    M = M.astype(float)
     
-    # Normalizar diagonal a 0
+    if n == 0:
+        return M
+    
     np.fill_diagonal(M, 0)
     
-    # Inicializar MIDI con influencias directas
     MIDI = M.copy()
     M_power = M.copy()
     
-    # Sumar influencias indirectas con atenuación
     for k in range(2, K + 1):
         M_power = np.dot(M_power, M)
         MIDI += (alpha ** (k - 1)) * M_power
@@ -96,23 +73,13 @@ def calcular_midi(M, alpha=0.5, K=3):
     return MIDI
 
 def calcular_motricidad_dependencia(MIDI):
-    """
-    Calcula motricidad y dependencia de cada variable
-    """
+    """Calcula motricidad y dependencia de cada variable"""
     motricidad = MIDI.sum(axis=1)
     dependencia = MIDI.sum(axis=0)
     return motricidad, dependencia
 
 def clasificar_variables(motricidad, dependencia):
-    """
-    Clasifica variables en 4 cuadrantes según metodología MICMAC de Godet
-    
-    Cuadrantes:
-    - Determinantes: Alta motricidad, Baja dependencia (PALANCAS)
-    - Clave: Alta motricidad, Alta dependencia (NUDO DEL SISTEMA)
-    - Variables resultado: Baja motricidad, Alta dependencia (INDICADORES)
-    - Autónomas: Baja motricidad, Baja dependencia (EXCLUIDAS)
-    """
+    """Clasifica variables en 4 cuadrantes según metodología Godet"""
     med_mot = np.median(motricidad)
     med_dep = np.median(dependencia)
     
@@ -130,99 +97,124 @@ def clasificar_variables(motricidad, dependencia):
     return clasificacion, med_mot, med_dep
 
 def detectar_convergencia(M, K_max=10, tolerancia=0.01):
-    """
-    Detecta el K óptimo donde el ranking de variables se estabiliza
-    """
+    """Detecta el K óptimo donde el ranking se estabiliza"""
+    M = np.array(M, dtype=float)
+    
+    if M.shape[0] == 0:
+        return 3
+    
     ranking_anterior = None
     
     for K in range(2, K_max + 1):
-        MIDI = calcular_midi(M, alpha=0.5, K=K)
-        motricidad, _ = calcular_motricidad_dependencia(MIDI)
-        ranking_actual = np.argsort(motricidad)[::-1]
-        
-        if ranking_anterior is not None:
-            correlacion = np.corrcoef(ranking_anterior, ranking_actual)[0, 1]
-            if correlacion > (1 - tolerancia):
-                return K
-        
-        ranking_anterior = ranking_actual
+        try:
+            MIDI = calcular_midi(M, alpha=0.5, K=K)
+            motricidad, _ = calcular_motricidad_dependencia(MIDI)
+            ranking_actual = np.argsort(motricidad)[::-1]
+            
+            if ranking_anterior is not None and len(ranking_anterior) == len(ranking_actual):
+                correlacion = np.corrcoef(ranking_anterior, ranking_actual)[0, 1]
+                if not np.isnan(correlacion) and correlacion > (1 - tolerancia):
+                    return K
+            
+            ranking_anterior = ranking_actual
+        except:
+            return 3
     
     return K_max
 
 # ============================================================
-# FUNCIONES DE CONVERSIÓN DE MATRICES
+# PROCESADOR ROBUSTO DE ARCHIVOS EXCEL
 # ============================================================
 
-def detectar_formato_matriz(df):
-    """
-    Detecta si la matriz tiene columnas de metadata (Tipo, Nombre, Código)
-    """
-    columnas = df.columns.tolist()
-    primera_col = df.iloc[:, 0].astype(str)
-    
-    tiene_tipos = any(col.lower() in ['tipo', 'type', 'categoria', 'category'] for col in columnas[:3])
-    tiene_nombres = any(col.lower() in ['nombre', 'name', 'variable', 'descripcion'] for col in columnas[:3])
-    tiene_codigos = any(col.lower() in ['codigo', 'code', 'cod', 'id'] for col in columnas[:3])
-    
-    patron_codigo = primera_col.str.match(r'^[A-Z]+\d+$', na=False).any()
-    
-    return {
-        'tiene_metadata': tiene_tipos or tiene_nombres or tiene_codigos,
-        'tiene_codigos_patron': patron_codigo,
-        'n_columnas_metadata': sum([tiene_tipos, tiene_nombres, tiene_codigos])
-    }
+def es_columna_excluir(nombre):
+    """Detecta si una columna debe ser excluida (SUMA, TOTAL, etc.)"""
+    if pd.isna(nombre):
+        return True
+    nombre_str = str(nombre).upper().strip()
+    palabras_excluir = ['SUMA', 'TOTAL', 'SUM', 'PROMEDIO', 'AVERAGE', 'MEAN']
+    return any(palabra in nombre_str for palabra in palabras_excluir)
 
-def convertir_matriz_con_metadata(df):
-    """
-    Convierte matriz con metadata al formato MICMAC estándar
-    """
-    columnas_numericas = []
-    for col in df.columns:
-        try:
-            if df[col].dtype in ['int64', 'float64'] or pd.to_numeric(df[col], errors='coerce').notna().sum() > len(df) * 0.5:
-                columnas_numericas.append(col)
-        except:
-            pass
-    
-    col_codigo = None
-    for col in df.columns[:5]:
-        if df[col].astype(str).str.match(r'^[A-Z]+\d+$', na=False).sum() > len(df) * 0.5:
-            col_codigo = col
-            break
-    
-    if col_codigo is None:
-        col_codigo = df.columns[0]
-    
-    nombres_variables = df[col_codigo].astype(str).tolist()
-    matriz_datos = df[columnas_numericas].values.astype(float)
-    
-    df_limpio = pd.DataFrame(
-        matriz_datos,
-        index=nombres_variables,
-        columns=nombres_variables[:len(columnas_numericas)]
-    )
-    
-    return df_limpio, nombres_variables
+def es_fila_valida(fila_datos):
+    """Verifica si una fila contiene datos numéricos válidos"""
+    valores_numericos = pd.to_numeric(fila_datos, errors='coerce')
+    # Una fila es válida si al menos 30% de sus valores son numéricos
+    return valores_numericos.notna().sum() > len(fila_datos) * 0.3
 
 def procesar_archivo_excel(uploaded_file):
     """
-    Procesa archivo Excel y detecta automáticamente el formato
+    Procesa archivo Excel de forma robusta:
+    1. Detecta y extrae nombres de variables
+    2. Excluye columnas/filas de totales (SUMA, TOTAL, etc.)
+    3. Genera matriz cuadrada limpia
     """
     try:
+        # Leer archivo
         df = pd.read_excel(uploaded_file, header=0)
         
-        formato = detectar_formato_matriz(df)
+        if df.empty:
+            return None, None, "El archivo está vacío"
         
-        if formato['tiene_metadata']:
-            df_procesado, nombres = convertir_matriz_con_metadata(df)
-            return df_procesado, nombres, "Matriz con metadata detectada y convertida"
-        else:
-            df.set_index(df.columns[0], inplace=True)
-            nombres = df.index.tolist()
-            return df, nombres, "Matriz en formato estándar"
+        # --- PASO 1: Identificar columna de nombres ---
+        col_nombres = df.columns[0]
+        
+        # --- PASO 2: Identificar columnas de datos (excluir SUMA, TOTAL, etc.) ---
+        columnas_datos = []
+        for col in df.columns[1:]:
+            if not es_columna_excluir(col):
+                columnas_datos.append(col)
+        
+        if len(columnas_datos) == 0:
+            return None, None, "No se encontraron columnas de datos válidas"
+        
+        # --- PASO 3: Identificar filas válidas (con datos numéricos) ---
+        filas_validas_idx = []
+        nombres_variables = []
+        
+        for i in range(len(df)):
+            nombre_fila = df.iloc[i, 0]
+            
+            # Excluir filas de totales
+            if es_columna_excluir(nombre_fila):
+                continue
+            
+            # Verificar si la fila tiene datos numéricos
+            fila_datos = df.loc[df.index[i], columnas_datos]
+            if es_fila_valida(fila_datos):
+                filas_validas_idx.append(i)
+                nombres_variables.append(str(nombre_fila).strip() if pd.notna(nombre_fila) else f"Var_{i}")
+        
+        if len(filas_validas_idx) == 0:
+            return None, None, "No se encontraron filas con datos numéricos válidos"
+        
+        # --- PASO 4: Extraer submatriz ---
+        df_matriz = df.iloc[filas_validas_idx][columnas_datos].copy()
+        
+        # Convertir todo a numérico
+        for col in df_matriz.columns:
+            df_matriz[col] = pd.to_numeric(df_matriz[col], errors='coerce').fillna(0)
+        
+        # --- PASO 5: Hacer matriz cuadrada ---
+        n_filas = len(df_matriz)
+        n_cols = len(df_matriz.columns)
+        n = min(n_filas, n_cols)
+        
+        # Recortar a matriz cuadrada
+        df_matriz = df_matriz.iloc[:n, :n]
+        nombres_variables = nombres_variables[:n]
+        
+        # Asignar nombres
+        df_matriz.columns = nombres_variables
+        df_matriz.index = nombres_variables
+        
+        # Diagonal a 0
+        M = df_matriz.values.astype(float)
+        np.fill_diagonal(M, 0)
+        df_matriz = pd.DataFrame(M, index=nombres_variables, columns=nombres_variables)
+        
+        return df_matriz, nombres_variables, f"✅ Matriz {n}x{n} procesada correctamente"
             
     except Exception as e:
-        return None, None, f"Error al procesar archivo: {str(e)}"
+        return None, None, f"Error: {str(e)}"
 
 # ============================================================
 # INTERFAZ DE USUARIO
@@ -238,40 +230,27 @@ with st.sidebar:
     uploaded_file = st.file_uploader(
         "Subir archivo Excel",
         type=['xlsx', 'xls'],
-        help="Acepta matrices con o sin metadata (Tipo, Nombre, Código)"
+        help="Primera columna = nombres de variables. Se excluyen automáticamente filas/columnas de SUMA/TOTAL."
     )
     
     st.divider()
     
     st.subheader("2. Parámetros MICMAC")
     
-    alpha = st.slider(
-        "α (Alpha) - Atenuación",
-        min_value=0.1,
-        max_value=1.0,
-        value=0.5,
-        step=0.1,
-        help="Factor de atenuación para influencias indirectas. Recomendado: 0.5"
-    )
+    alpha = st.slider("α (Alpha)", min_value=0.1, max_value=1.0, value=0.5, step=0.1)
     
-    K_auto = st.checkbox("K automático (detectar convergencia)", value=True)
+    K_auto = st.checkbox("K automático", value=True)
     
     if not K_auto:
-        K_max = st.slider(
-            "K - Profundidad de análisis",
-            min_value=2,
-            max_value=10,
-            value=3,
-            help="Número de iteraciones para calcular influencias indirectas"
-        )
+        K_manual = st.slider("K - Profundidad", min_value=2, max_value=10, value=3)
     else:
-        K_max = None
+        K_manual = 3
     
     st.divider()
     
     st.subheader("3. Visualización")
-    mostrar_etiquetas = st.checkbox("Mostrar etiquetas en gráficos", value=True)
-    tamaño_fuente = st.slider("Tamaño de fuente", min_value=8, max_value=16, value=10)
+    mostrar_etiquetas = st.checkbox("Mostrar etiquetas", value=True)
+    tamaño_fuente = st.slider("Tamaño fuente", min_value=8, max_value=16, value=10)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 Datos",
@@ -281,8 +260,11 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📥 Exportar"
 ])
 
+# Inicializar session state
 if 'matriz_procesada' not in st.session_state:
     st.session_state.matriz_procesada = None
+if 'nombres_variables' not in st.session_state:
+    st.session_state.nombres_variables = None
 if 'resultados' not in st.session_state:
     st.session_state.resultados = None
 
@@ -296,85 +278,51 @@ with tab1:
         df_procesado, nombres, mensaje = procesar_archivo_excel(uploaded_file)
         
         if df_procesado is not None:
-            st.success(f"✅ {mensaje}")
+            st.success(mensaje)
             
             st.session_state.matriz_procesada = df_procesado
             st.session_state.nombres_variables = nombres
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Variables", len(nombres))
-            col2.metric("Celdas", df_procesado.size)
+            col2.metric("Tamaño", f"{len(nombres)}x{len(nombres)}")
             
-            # FIX: Convertir a numérico antes de contar
-            try:
-                matriz_num = df_procesado.values.astype(float)
-                densidad = (matriz_num != 0).sum() / matriz_num.size * 100
-                col3.metric("Densidad", f"{densidad:.1f}%")
-            except:
-                col3.metric("Densidad", "N/A")
+            M_temp = df_procesado.values.astype(float)
+            densidad = (M_temp != 0).sum() / M_temp.size * 100
+            col3.metric("Densidad", f"{densidad:.1f}%")
             
             st.subheader("Vista previa de la matriz")
             st.dataframe(df_procesado, use_container_width=True, height=400)
             
-            st.subheader("📊 Estadísticas de la matriz")
+            # Estadísticas
+            st.subheader("📊 Estadísticas")
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**Distribución de valores:**")
-                # FIX: Usar pd.to_numeric para manejar valores mixtos
-                valores = df_procesado.values.flatten()
-                valores = pd.to_numeric(valores, errors='coerce')
-                valores = valores[~np.isnan(valores)]
+                valores = M_temp.flatten()
+                valores_sin_cero = valores[valores != 0]
                 
-                if len(valores) > 0:
-                    fig_hist = px.histogram(
-                        x=valores,
-                        nbins=20,
-                        title="Distribución de influencias",
-                        labels={'x': 'Valor de influencia', 'y': 'Frecuencia'}
-                    )
+                if len(valores_sin_cero) > 0:
+                    fig_hist = px.histogram(x=valores_sin_cero, nbins=20, 
+                        title="Distribución de influencias (sin ceros)")
                     st.plotly_chart(fig_hist, use_container_width=True)
-                else:
-                    st.warning("No se pudieron extraer valores numéricos")
             
             with col2:
-                st.write("**Resumen estadístico:**")
-                if len(valores) > 0:
-                    stats = {
-                        'Mínimo': np.nanmin(valores),
-                        'Máximo': np.nanmax(valores),
-                        'Media': np.nanmean(valores),
-                        'Mediana': np.nanmedian(valores),
-                        'Desv. Estándar': np.nanstd(valores)
-                    }
-                    st.dataframe(pd.DataFrame([stats]).T, use_container_width=True)
-                else:
-                    st.warning("No hay estadísticas disponibles")
+                st.write("**Resumen:**")
+                st.write(f"- Mínimo: {M_temp.min()}")
+                st.write(f"- Máximo: {M_temp.max()}")
+                st.write(f"- Media: {M_temp.mean():.2f}")
+                st.write(f"- Mediana: {np.median(M_temp):.2f}")
         else:
-            st.error(mensaje)
+            st.error(f"❌ {mensaje}")
     else:
+        st.info("👆 Sube un archivo Excel con tu matriz de influencias")
         st.markdown("""
-        <div class="info-box">
-        <h3>📁 Formatos Aceptados</h3>
-        <p><strong>Formato 1 - Matriz estándar:</strong></p>
-        <pre>
-| Variable | Var1 | Var2 | Var3 |
-|----------|------|------|------|
-| Var1     | 0    | 3    | 1    |
-| Var2     | 2    | 0    | 2    |
-| Var3     | 1    | 1    | 0    |
-        </pre>
-        <p><strong>Formato 2 - Con metadata:</strong></p>
-        <pre>
-| Tipo      | Nombre              | Código | P1 | E1 | S1 |
-|-----------|---------------------|--------|----|----|----| 
-| Políticas | Regulación ambiental| P1     | 0  | 2  | 1  |
-| Económicas| Inversión digital   | E1     | 1  | 0  | 2  |
-| Sociales  | Aceptación social   | S1     | 2  | 1  | 0  |
-        </pre>
-        <p>MICMAC PRO detecta automáticamente el formato y extrae la matriz.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        **Formato esperado:**
+        - Primera columna: nombres de las variables
+        - Primera fila (header): nombres de las variables  
+        - Filas/columnas con "SUMA" o "TOTAL" se excluyen automáticamente
+        """)
 
 # ============================================================
 # TAB 2: ANÁLISIS MICMAC
@@ -386,40 +334,34 @@ with tab2:
         df = st.session_state.matriz_procesada
         nombres = st.session_state.nombres_variables
         
-        # Convertir a numérico de forma segura
-        try:
-            M = df.values.astype(float)
-        except ValueError:
-            # Si falla, convertir celda por celda
-            M = np.zeros((len(df), len(df.columns)))
-            for i in range(len(df)):
-                for j in range(len(df.columns)):
-                    try:
-                        M[i, j] = float(df.iloc[i, j])
-                    except (ValueError, TypeError):
-                        M[i, j] = 0
+        M = df.values.astype(float)
+        n = M.shape[0]
         
-        np.fill_diagonal(M, 0)
+        st.info(f"📐 Matriz: {n}x{n} variables")
         
+        # Detectar K
         if K_auto:
             K_usado = detectar_convergencia(M)
-            st.info(f"🔍 K óptimo detectado: **{K_usado}** (convergencia del ranking)")
+            st.success(f"🔍 K óptimo: **{K_usado}**")
         else:
-            K_usado = K_max
+            K_usado = K_manual
         
+        # Calcular
         MIDI = calcular_midi(M, alpha=alpha, K=K_usado)
         motricidad, dependencia = calcular_motricidad_dependencia(MIDI)
         clasificacion, med_mot, med_dep = clasificar_variables(motricidad, dependencia)
         
+        # DataFrame de resultados
         df_resultados = pd.DataFrame({
-            'Variable': nombres[:len(motricidad)],
-            'Motricidad': motricidad,
-            'Dependencia': dependencia,
+            'Variable': nombres,
+            'Motricidad': np.round(motricidad, 2),
+            'Dependencia': np.round(dependencia, 2),
             'Clasificación': clasificacion
         })
-        df_resultados['Ranking_Mot'] = df_resultados['Motricidad'].rank(ascending=False).astype(int)
+        df_resultados['Ranking'] = df_resultados['Motricidad'].rank(ascending=False).astype(int)
         df_resultados = df_resultados.sort_values('Motricidad', ascending=False)
         
+        # Guardar
         st.session_state.resultados = {
             'df_resultados': df_resultados,
             'MIDI': MIDI,
@@ -432,17 +374,18 @@ with tab2:
             'K': K_usado
         }
         
-        st.subheader("📈 Resumen del Análisis")
-        
+        # Métricas
+        st.subheader("📈 Resumen")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Variables", len(nombres))
+        col1.metric("Total", len(nombres))
         col2.metric("Determinantes", sum(c == 'Determinantes' for c in clasificacion))
-        col3.metric("Variables Clave", sum(c == 'Clave' for c in clasificacion))
-        col4.metric("Variables Resultado", sum(c == 'Variables resultado' for c in clasificacion))
+        col3.metric("Clave", sum(c == 'Clave' for c in clasificacion))
+        col4.metric("Resultado", sum(c == 'Variables resultado' for c in clasificacion))
         
-        st.subheader("🏆 Ranking de Variables por Motricidad")
+        # Tabla
+        st.subheader("🏆 Ranking de Variables")
         
-        def color_clasificacion(val):
+        def color_clasif(val):
             colors = {
                 'Determinantes': 'background-color: #ffcccc',
                 'Clave': 'background-color: #cce5ff',
@@ -452,39 +395,24 @@ with tab2:
             return colors.get(val, '')
         
         st.dataframe(
-            df_resultados.style.applymap(color_clasificacion, subset=['Clasificación']),
+            df_resultados.style.applymap(color_clasif, subset=['Clasificación']),
             use_container_width=True,
             height=400
         )
         
-        st.subheader("🔢 Matriz MIDI (Influencias Directas e Indirectas)")
-        
-        df_midi = pd.DataFrame(
-            MIDI,
-            index=nombres[:len(MIDI)],
-            columns=nombres[:len(MIDI)]
-        )
-        
+        # Heatmap
+        st.subheader("🔢 Matriz MIDI")
         fig_midi = go.Figure(data=go.Heatmap(
-            z=MIDI,
-            x=nombres[:len(MIDI)],
-            y=nombres[:len(MIDI)],
-            colorscale='Blues',
-            showscale=True
+            z=MIDI, x=nombres, y=nombres, colorscale='Blues'
         ))
-        fig_midi.update_layout(
-            title=f"Matriz MIDI (α={alpha}, K={K_usado})",
-            xaxis_title="Variables (influenciadas)",
-            yaxis_title="Variables (influyentes)",
-            height=600
-        )
+        fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
         st.plotly_chart(fig_midi, use_container_width=True)
         
     else:
-        st.warning("⚠️ Primero carga una matriz en la pestaña 'Datos'")
+        st.warning("⚠️ Primero carga una matriz en 'Datos'")
 
 # ============================================================
-# TAB 3: SUBSISTEMAS (GRÁFICO DE CUADRANTES)
+# TAB 3: SUBSISTEMAS
 # ============================================================
 with tab3:
     st.header("📈 Gráfico de Subsistemas")
@@ -495,13 +423,10 @@ with tab3:
         
         st.markdown("""
         <div class="info-box">
-        <strong>Interpretación de los cuadrantes:</strong>
-        <ul>
-            <li><strong>🔴 Determinantes:</strong> Alta motricidad, baja dependencia → PALANCAS DE ACCIÓN</li>
-            <li><strong>🔵 Clave:</strong> Alta motricidad, alta dependencia → NUDO DEL SISTEMA (vigilar)</li>
-            <li><strong>💧 Variables resultado:</strong> Baja motricidad, alta dependencia → INDICADORES</li>
-            <li><strong>🟠 Autónomas:</strong> Baja motricidad, baja dependencia → EXCLUIDAS</li>
-        </ul>
+        🔴 <b>Determinantes:</b> Palancas de acción (alta motricidad, baja dependencia)<br>
+        🔵 <b>Clave:</b> Nudo del sistema (alta motricidad, alta dependencia)<br>
+        💧 <b>Resultado:</b> Indicadores (baja motricidad, alta dependencia)<br>
+        🟠 <b>Autónomas:</b> Excluidas (baja motricidad, baja dependencia)
         </div>
         """, unsafe_allow_html=True)
         
@@ -512,12 +437,12 @@ with tab3:
             'Autónomas': '#FF9944'
         }
         
-        fig_subsistemas = go.Figure()
+        fig = go.Figure()
         
         for clasif, color in color_map.items():
             df_temp = df_res[df_res['Clasificación'] == clasif]
             if len(df_temp) > 0:
-                fig_subsistemas.add_trace(go.Scatter(
+                fig.add_trace(go.Scatter(
                     x=df_temp['Dependencia'],
                     y=df_temp['Motricidad'],
                     mode='markers+text' if mostrar_etiquetas else 'markers',
@@ -525,91 +450,44 @@ with tab3:
                     text=df_temp['Variable'] if mostrar_etiquetas else None,
                     textposition='top center',
                     textfont=dict(size=tamaño_fuente),
-                    marker=dict(
-                        size=12,
-                        color=color,
-                        line=dict(width=1, color='black')
-                    ),
-                    hovertemplate="<b>%{text}</b><br>Motricidad: %{y:.2f}<br>Dependencia: %{x:.2f}<extra></extra>"
+                    marker=dict(size=12, color=color, line=dict(width=1, color='black')),
+                    hovertemplate="<b>%{text}</b><br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>"
                 ))
         
-        fig_subsistemas.add_hline(
-            y=res['med_mot'],
-            line_dash="dash",
-            line_color="gray",
-            opacity=0.5,
-            annotation_text="Mediana Motricidad"
-        )
-        fig_subsistemas.add_vline(
-            x=res['med_dep'],
-            line_dash="dash",
-            line_color="gray",
-            opacity=0.5,
-            annotation_text="Mediana Dependencia"
-        )
+        # Líneas de umbral
+        fig.add_hline(y=res['med_mot'], line_dash="dash", line_color="gray", opacity=0.5)
+        fig.add_vline(x=res['med_dep'], line_dash="dash", line_color="gray", opacity=0.5)
         
+        # Etiquetas cuadrantes
         max_mot = max(res['motricidad']) * 1.1
         max_dep = max(res['dependencia']) * 1.1
         
-        fig_subsistemas.add_annotation(
-            x=res['med_dep'] * 0.3,
-            y=max_mot * 0.9,
-            text="🔴 DETERMINANTES<br>(Palancas)",
-            showarrow=False,
-            font=dict(size=12, color='red')
-        )
-        fig_subsistemas.add_annotation(
-            x=max_dep * 0.8,
-            y=max_mot * 0.9,
-            text="🔵 VARIABLES CLAVE<br>(Nudo del sistema)",
-            showarrow=False,
-            font=dict(size=12, color='blue')
-        )
-        fig_subsistemas.add_annotation(
-            x=max_dep * 0.8,
-            y=res['med_mot'] * 0.3,
-            text="💧 RESULTADO<br>(Indicadores)",
-            showarrow=False,
-            font=dict(size=12, color='#66BBFF')
-        )
-        fig_subsistemas.add_annotation(
-            x=res['med_dep'] * 0.3,
-            y=res['med_mot'] * 0.3,
-            text="🟠 AUTÓNOMAS<br>(Excluidas)",
-            showarrow=False,
-            font=dict(size=12, color='orange')
+        fig.add_annotation(x=res['med_dep']*0.3, y=max_mot*0.9, text="🔴 DETERMINANTES", showarrow=False, font=dict(color='red', size=14))
+        fig.add_annotation(x=max_dep*0.8, y=max_mot*0.9, text="🔵 CLAVE", showarrow=False, font=dict(color='blue', size=14))
+        fig.add_annotation(x=max_dep*0.8, y=res['med_mot']*0.3, text="💧 RESULTADO", showarrow=False, font=dict(color='#66BBFF', size=14))
+        fig.add_annotation(x=res['med_dep']*0.3, y=res['med_mot']*0.3, text="🟠 AUTÓNOMAS", showarrow=False, font=dict(color='orange', size=14))
+        
+        fig.update_layout(
+            title=f"Subsistemas MICMAC (α={res['alpha']}, K={res['K']})",
+            xaxis_title="Dependencia",
+            yaxis_title="Motricidad",
+            height=700
         )
         
-        fig_subsistemas.update_layout(
-            title=f"Plano de Subsistemas MICMAC (α={res['alpha']}, K={res['K']})",
-            xaxis_title="Dependencia (suma de influencias recibidas)",
-            yaxis_title="Motricidad (suma de influencias ejercidas)",
-            height=700,
-            showlegend=True,
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01
-            )
-        )
+        st.plotly_chart(fig, use_container_width=True)
         
-        st.plotly_chart(fig_subsistemas, use_container_width=True)
-        
+        # Resumen por cuadrante
         st.subheader("📊 Distribución por Cuadrantes")
-        
-        resumen_cuadrantes = df_res.groupby('Clasificación').agg({
+        resumen = df_res.groupby('Clasificación').agg({
             'Variable': 'count',
             'Motricidad': 'mean',
             'Dependencia': 'mean'
         }).round(2)
-        resumen_cuadrantes.columns = ['N° Variables', 'Motricidad Media', 'Dependencia Media']
-        resumen_cuadrantes['Porcentaje'] = (resumen_cuadrantes['N° Variables'] / len(df_res) * 100).round(1).astype(str) + '%'
-        
-        st.dataframe(resumen_cuadrantes, use_container_width=True)
+        resumen.columns = ['Cantidad', 'Motricidad Media', 'Dependencia Media']
+        st.dataframe(resumen, use_container_width=True)
         
     else:
-        st.warning("⚠️ Primero ejecuta el análisis en la pestaña 'Análisis MICMAC'")
+        st.warning("⚠️ Ejecuta primero el análisis")
 
 # ============================================================
 # TAB 4: EJE ESTRATÉGICO
@@ -623,19 +501,18 @@ with tab4:
         
         st.markdown("""
         <div class="info-box">
-        <strong>¿Qué es el Eje Estratégico?</strong>
-        <p>La diagonal donde Motricidad = Dependencia representa las variables con <strong>máximo valor estratégico</strong>.
-        Variables cerca de esta línea participan intensamente en los circuitos de retroalimentación del sistema.</p>
-        <p><strong>Distancia al eje:</strong> menor distancia = mayor importancia estratégica.</p>
+        <b>Eje Estratégico:</b> La diagonal donde Motricidad = Dependencia.<br>
+        Variables cerca de esta línea tienen <b>máximo valor estratégico</b> porque participan
+        intensamente en los circuitos de retroalimentación del sistema.
         </div>
         """, unsafe_allow_html=True)
         
-        df_res['Distancia_Eje'] = np.abs(df_res['Motricidad'] - df_res['Dependencia'])
         df_res['Valor_Estrategico'] = df_res['Motricidad'] + df_res['Dependencia']
+        df_res['Distancia_Eje'] = np.abs(df_res['Motricidad'] - df_res['Dependencia'])
         
-        fig_eje = go.Figure()
+        fig = go.Figure()
         
-        fig_eje.add_trace(go.Scatter(
+        fig.add_trace(go.Scatter(
             x=df_res['Dependencia'],
             y=df_res['Motricidad'],
             mode='markers+text' if mostrar_etiquetas else 'markers',
@@ -649,42 +526,29 @@ with tab4:
                 showscale=True,
                 colorbar=dict(title="Valor<br>Estratégico")
             ),
-            hovertemplate="<b>%{text}</b><br>Motricidad: %{y:.2f}<br>Dependencia: %{x:.2f}<br>Valor Estratégico: %{marker.color:.2f}<extra></extra>"
+            hovertemplate="<b>%{text}</b><br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>"
         ))
         
+        # Diagonal
         max_val = max(max(res['motricidad']), max(res['dependencia'])) * 1.1
-        fig_eje.add_trace(go.Scatter(
-            x=[0, max_val],
-            y=[0, max_val],
-            mode='lines',
-            name='Eje Estratégico',
-            line=dict(color='red', width=2, dash='dash')
+        fig.add_trace(go.Scatter(
+            x=[0, max_val], y=[0, max_val],
+            mode='lines', name='Eje Estratégico',
+            line=dict(color='red', dash='dash', width=2)
         ))
         
-        fig_eje.update_layout(
-            title="Eje Estratégico - Variables por Valor Estratégico",
-            xaxis_title="Dependencia",
-            yaxis_title="Motricidad",
-            height=600,
-            showlegend=True
-        )
+        fig.update_layout(title="Eje Estratégico", height=600, xaxis_title="Dependencia", yaxis_title="Motricidad")
+        st.plotly_chart(fig, use_container_width=True)
         
-        st.plotly_chart(fig_eje, use_container_width=True)
-        
-        st.subheader("🏆 Top 10 Variables Más Estratégicas")
-        
-        top_estrategicas = df_res.nlargest(10, 'Valor_Estrategico')[
+        st.subheader("🏆 Top 10 Variables Estratégicas")
+        top10 = df_res.nlargest(10, 'Valor_Estrategico')[
             ['Variable', 'Motricidad', 'Dependencia', 'Valor_Estrategico', 'Distancia_Eje', 'Clasificación']
         ]
-        top_estrategicas.columns = ['Variable', 'Motricidad', 'Dependencia', 'Valor Estratégico', 'Distancia al Eje', 'Clasificación']
-        
-        st.dataframe(
-            top_estrategicas.style.background_gradient(subset=['Valor Estratégico'], cmap='YlOrRd'),
-            use_container_width=True
-        )
+        top10.columns = ['Variable', 'Motricidad', 'Dependencia', 'Valor Estratégico', 'Distancia al Eje', 'Clasificación']
+        st.dataframe(top10, use_container_width=True)
         
     else:
-        st.warning("⚠️ Primero ejecuta el análisis en la pestaña 'Análisis MICMAC'")
+        st.warning("⚠️ Ejecuta primero el análisis")
 
 # ============================================================
 # TAB 5: EXPORTAR
@@ -694,80 +558,41 @@ with tab5:
     
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
-        df_res = res['df_resultados']
         
-        nombre_proyecto = st.text_input("Nombre del proyecto", value="analisis_micmac")
+        nombre = st.text_input("Nombre del proyecto", value="micmac_analisis")
         
-        if st.button("📥 Generar Excel Completo", type="primary"):
+        if st.button("📥 Generar Excel", type="primary"):
             buffer = BytesIO()
             
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_res.to_excel(writer, sheet_name='Resultados', index=False)
+                res['df_resultados'].to_excel(writer, sheet_name='Resultados', index=False)
                 
-                df_midi = pd.DataFrame(
-                    res['MIDI'],
-                    index=st.session_state.nombres_variables[:len(res['MIDI'])],
-                    columns=st.session_state.nombres_variables[:len(res['MIDI'])]
-                )
-                df_midi.to_excel(writer, sheet_name='Matriz_MIDI')
+                nombres = st.session_state.nombres_variables
+                pd.DataFrame(res['MIDI'], index=nombres, columns=nombres).to_excel(writer, sheet_name='MIDI')
                 
-                params = pd.DataFrame({
-                    'Parámetro': ['Alpha (α)', 'K (profundidad)', 'N° Variables', 'Determinantes', 'Clave', 'Resultado', 'Autónomas'],
-                    'Valor': [
-                        res['alpha'],
-                        res['K'],
-                        len(df_res),
+                pd.DataFrame({
+                    'Parámetro': ['Alpha', 'K', 'Variables', 'Determinantes', 'Clave', 'Resultado', 'Autónomas'],
+                    'Valor': [res['alpha'], res['K'], len(res['df_resultados']),
                         sum(c == 'Determinantes' for c in res['clasificacion']),
                         sum(c == 'Clave' for c in res['clasificacion']),
                         sum(c == 'Variables resultado' for c in res['clasificacion']),
-                        sum(c == 'Autónomas' for c in res['clasificacion'])
-                    ]
-                })
-                params.to_excel(writer, sheet_name='Parametros', index=False)
+                        sum(c == 'Autónomas' for c in res['clasificacion'])]
+                }).to_excel(writer, sheet_name='Parametros', index=False)
                 
                 if st.session_state.matriz_procesada is not None:
                     st.session_state.matriz_procesada.to_excel(writer, sheet_name='Matriz_Original')
             
             buffer.seek(0)
-            
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=buffer,
-                file_name=f"{nombre_proyecto}_micmac_pro.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            
-            st.success("✅ Excel generado correctamente!")
-        
-        st.subheader("📋 Vista previa de datos a exportar")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Hojas incluidas:**")
-            st.write("1. Resultados (ranking y clasificación)")
-            st.write("2. Matriz MIDI")
-            st.write("3. Parámetros del análisis")
-            st.write("4. Matriz original")
-        
-        with col2:
-            st.write("**Resumen del análisis:**")
-            st.write(f"- α = {res['alpha']}")
-            st.write(f"- K = {res['K']}")
-            st.write(f"- Variables: {len(df_res)}")
-            
+            st.download_button("📥 Descargar Excel", buffer, f"{nombre}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.success("✅ Excel generado!")
     else:
-        st.warning("⚠️ Primero ejecuta el análisis para poder exportar")
+        st.warning("⚠️ Ejecuta primero el análisis")
 
-# ============================================================
-# FOOTER
-# ============================================================
+# Footer
 st.divider()
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    <p><strong>MICMAC PRO v4.2</strong> - Análisis Estructural con Conversor Integrado</p>
-    <p>Basado en la metodología de Michel Godet (1990)</p>
-    <p>Desarrollado por <strong>JETLEX Strategic Consulting</strong></p>
-    <p>Martín Pratto Chiarella - 2025</p>
+<div style="text-align: center; color: #666;">
+<b>MICMAC PRO v4.4</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | Martin Pratto Chiarella 2026
 </div>
 """, unsafe_allow_html=True)

@@ -4,7 +4,7 @@ Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
 Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
-Versión: 4.4 - Procesador robusto de matrices Excel
+Versión: 5.0 - Soporte múltiples hojas Excel + detección automática de matriz
 """
 
 import streamlit as st
@@ -13,6 +13,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from io import BytesIO
+import re
 
 # Configuración de la página
 st.set_page_config(
@@ -48,13 +49,59 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
+# FUNCIONES DE EXTRACCIÓN DE CÓDIGOS
+# ============================================================
+
+def extraer_codigo(nombre_variable):
+    """Extrae el código corto de una variable"""
+    if pd.isna(nombre_variable):
+        return "VAR"
+    
+    nombre = str(nombre_variable).strip()
+    
+    # Si el nombre ya es un código corto (solo letras y números, <15 chars)
+    if re.match(r'^[A-Za-z_]+[A-Za-z0-9_]*$', nombre) and len(nombre) < 15:
+        return nombre.upper()
+    
+    # Buscar patrón de código al inicio: letras seguidas de números
+    match = re.match(r'^([A-Za-z]+\d+)', nombre)
+    if match:
+        return match.group(1).upper()
+    
+    # Buscar patrón V1, V2, etc.
+    match = re.match(r'^(V\d+)', nombre, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    
+    return nombre[:8].upper() if len(nombre) >= 8 else nombre.upper()
+
+def generar_codigos_y_mapeo(nombres_variables):
+    """Genera códigos únicos para cada variable"""
+    codigos = []
+    mapeo = {}
+    codigos_usados = set()
+    
+    for i, nombre in enumerate(nombres_variables):
+        codigo = extraer_codigo(nombre)
+        
+        codigo_original = codigo
+        contador = 1
+        while codigo in codigos_usados:
+            codigo = f"{codigo_original}_{contador}"
+            contador += 1
+        
+        codigos_usados.add(codigo)
+        codigos.append(codigo)
+        mapeo[codigo] = nombre
+    
+    return codigos, mapeo
+
+# ============================================================
 # FUNCIONES DE CÁLCULO MICMAC
 # ============================================================
 
 def calcular_midi(M, alpha=0.5, K=3):
-    """
-    Calcula la Matriz de Influencias Directas e Indirectas (MIDI)
-    """
+    """Calcula la Matriz de Influencias Directas e Indirectas (MIDI)"""
     M = np.array(M, dtype=float)
     n = M.shape[0]
     
@@ -126,95 +173,160 @@ def detectar_convergencia(M, K_max=10, tolerancia=0.01):
 # PROCESADOR ROBUSTO DE ARCHIVOS EXCEL
 # ============================================================
 
-def es_columna_excluir(nombre):
-    """Detecta si una columna debe ser excluida (SUMA, TOTAL, etc.)"""
-    if pd.isna(nombre):
-        return True
-    nombre_str = str(nombre).upper().strip()
-    palabras_excluir = ['SUMA', 'TOTAL', 'SUM', 'PROMEDIO', 'AVERAGE', 'MEAN']
-    return any(palabra in nombre_str for palabra in palabras_excluir)
+def es_celda_excluir(valor):
+    """Detecta si una celda contiene valores a excluir (SUMA, TOTAL, Σ, etc.)"""
+    if pd.isna(valor):
+        return False
+    valor_str = str(valor).upper().strip()
+    palabras_excluir = ['SUMA', 'TOTAL', 'SUM', 'PROMEDIO', 'AVERAGE', 'MEAN', 'Σ', 'MOTRI', 'DEPEN']
+    return any(palabra in valor_str for palabra in palabras_excluir)
 
-def es_fila_valida(fila_datos):
-    """Verifica si una fila contiene datos numéricos válidos"""
-    valores_numericos = pd.to_numeric(fila_datos, errors='coerce')
-    # Una fila es válida si al menos 30% de sus valores son numéricos
-    return valores_numericos.notna().sum() > len(fila_datos) * 0.3
+def es_valor_diagonal(valor):
+    """Detecta si un valor es marcador de diagonal (X, -, etc.)"""
+    if pd.isna(valor):
+        return False
+    valor_str = str(valor).upper().strip()
+    return valor_str in ['X', '-', 'N/A', 'NA', 'DIAG', '*']
 
-def procesar_archivo_excel(uploaded_file):
+def convertir_valor_numerico(valor):
+    """Convierte un valor a numérico, manejando casos especiales"""
+    if pd.isna(valor):
+        return 0.0
+    if es_valor_diagonal(valor):
+        return 0.0
+    try:
+        return float(valor)
+    except (ValueError, TypeError):
+        return 0.0
+
+def detectar_inicio_matriz(df):
+    """
+    Detecta automáticamente dónde empieza la matriz de datos.
+    Busca la primera fila donde la mayoría de celdas son numéricas o 'X'.
+    """
+    for i in range(min(20, len(df))):  # Buscar en las primeras 20 filas
+        fila = df.iloc[i, 1:min(10, len(df.columns))]  # Revisar primeras columnas (excluyendo col 0)
+        
+        valores_validos = 0
+        for val in fila:
+            if pd.isna(val):
+                continue
+            if es_valor_diagonal(val):
+                valores_validos += 1
+            else:
+                try:
+                    float(val)
+                    valores_validos += 1
+                except:
+                    pass
+        
+        # Si más del 50% son valores válidos, esta es probablemente la primera fila de datos
+        if valores_validos >= len(fila) * 0.5:
+            return i
+    
+    return 0  # Por defecto, empezar desde el inicio
+
+def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
     """
     Procesa archivo Excel de forma robusta:
-    1. Detecta y extrae nombres de variables
-    2. Excluye columnas/filas de totales (SUMA, TOTAL, etc.)
-    3. Genera matriz cuadrada limpia
+    - Soporta múltiples hojas
+    - Detecta automáticamente inicio de matriz
+    - Maneja 'X' en diagonal
+    - Excluye filas/columnas de totales
     """
     try:
-        # Leer archivo
-        df = pd.read_excel(uploaded_file, header=0)
+        # Obtener lista de hojas
+        xl = pd.ExcelFile(uploaded_file)
+        hojas_disponibles = xl.sheet_names
+        
+        # Seleccionar hoja
+        if nombre_hoja and nombre_hoja in hojas_disponibles:
+            hoja_usar = nombre_hoja
+        else:
+            # Buscar hoja que contenga "MID" o "Matriz" en el nombre
+            hoja_usar = hojas_disponibles[0]
+            for hoja in hojas_disponibles:
+                if 'MID' in hoja.upper() or 'MATRIZ' in hoja.upper():
+                    hoja_usar = hoja
+                    break
+        
+        # Leer hoja sin headers
+        df = pd.read_excel(xl, sheet_name=hoja_usar, header=None)
         
         if df.empty:
-            return None, None, "El archivo está vacío"
+            return None, None, None, "El archivo está vacío"
         
-        # --- PASO 1: Identificar columna de nombres ---
-        col_nombres = df.columns[0]
+        # Detectar inicio de matriz
+        fila_inicio = detectar_inicio_matriz(df)
         
-        # --- PASO 2: Identificar columnas de datos (excluir SUMA, TOTAL, etc.) ---
-        columnas_datos = []
-        for col in df.columns[1:]:
-            if not es_columna_excluir(col):
-                columnas_datos.append(col)
+        # La fila anterior al inicio de datos podría ser los headers
+        if fila_inicio > 0:
+            headers = df.iloc[fila_inicio - 1, :].tolist()
+        else:
+            headers = df.iloc[0, :].tolist()
+            fila_inicio = 1
         
-        if len(columnas_datos) == 0:
-            return None, None, "No se encontraron columnas de datos válidas"
+        # Identificar columnas válidas (excluir Σ, SUMA, etc.)
+        columnas_validas = []
+        for j in range(1, len(df.columns)):  # Empezar desde columna 1
+            header = headers[j] if j < len(headers) else None
+            if not es_celda_excluir(header):
+                columnas_validas.append(j)
         
-        # --- PASO 3: Identificar filas válidas (con datos numéricos) ---
-        filas_validas_idx = []
+        # Identificar filas válidas
+        filas_validas = []
         nombres_variables = []
         
-        for i in range(len(df)):
+        for i in range(fila_inicio, len(df)):
             nombre_fila = df.iloc[i, 0]
             
             # Excluir filas de totales
-            if es_columna_excluir(nombre_fila):
+            if es_celda_excluir(nombre_fila):
                 continue
             
-            # Verificar si la fila tiene datos numéricos
-            fila_datos = df.loc[df.index[i], columnas_datos]
-            if es_fila_valida(fila_datos):
-                filas_validas_idx.append(i)
-                nombres_variables.append(str(nombre_fila).strip() if pd.notna(nombre_fila) else f"Var_{i}")
+            # Verificar que la fila tenga datos numéricos
+            fila_datos = df.iloc[i, columnas_validas[:5]]  # Revisar primeras columnas
+            valores_numericos = 0
+            for val in fila_datos:
+                if es_valor_diagonal(val) or (not pd.isna(val) and isinstance(val, (int, float))):
+                    valores_numericos += 1
+                else:
+                    try:
+                        float(val)
+                        valores_numericos += 1
+                    except:
+                        pass
+            
+            if valores_numericos >= 2:  # Al menos 2 valores numéricos
+                filas_validas.append(i)
+                nombres_variables.append(str(nombre_fila).strip() if pd.notna(nombre_fila) else f"V{len(nombres_variables)+1}")
         
-        if len(filas_validas_idx) == 0:
-            return None, None, "No se encontraron filas con datos numéricos válidos"
+        if len(filas_validas) == 0:
+            return None, None, None, "No se encontraron filas con datos válidos"
         
-        # --- PASO 4: Extraer submatriz ---
-        df_matriz = df.iloc[filas_validas_idx][columnas_datos].copy()
-        
-        # Convertir todo a numérico
-        for col in df_matriz.columns:
-            df_matriz[col] = pd.to_numeric(df_matriz[col], errors='coerce').fillna(0)
-        
-        # --- PASO 5: Hacer matriz cuadrada ---
-        n_filas = len(df_matriz)
-        n_cols = len(df_matriz.columns)
-        n = min(n_filas, n_cols)
-        
-        # Recortar a matriz cuadrada
-        df_matriz = df_matriz.iloc[:n, :n]
+        # Hacer matriz cuadrada
+        n = min(len(filas_validas), len(columnas_validas))
+        filas_validas = filas_validas[:n]
+        columnas_validas = columnas_validas[:n]
         nombres_variables = nombres_variables[:n]
         
-        # Asignar nombres
-        df_matriz.columns = nombres_variables
-        df_matriz.index = nombres_variables
+        # Extraer y convertir matriz
+        matriz = np.zeros((n, n))
+        for i, fila_idx in enumerate(filas_validas):
+            for j, col_idx in enumerate(columnas_validas):
+                valor = df.iloc[fila_idx, col_idx]
+                matriz[i, j] = convertir_valor_numerico(valor)
         
         # Diagonal a 0
-        M = df_matriz.values.astype(float)
-        np.fill_diagonal(M, 0)
-        df_matriz = pd.DataFrame(M, index=nombres_variables, columns=nombres_variables)
+        np.fill_diagonal(matriz, 0)
         
-        return df_matriz, nombres_variables, f"✅ Matriz {n}x{n} procesada correctamente"
+        # Crear DataFrame
+        df_matriz = pd.DataFrame(matriz, index=nombres_variables, columns=nombres_variables)
+        
+        return df_matriz, nombres_variables, hojas_disponibles, f"✅ Matriz {n}x{n} de hoja '{hoja_usar}' procesada correctamente"
             
     except Exception as e:
-        return None, None, f"Error: {str(e)}"
+        return None, None, None, f"Error: {str(e)}"
 
 # ============================================================
 # INTERFAZ DE USUARIO
@@ -223,6 +335,20 @@ def procesar_archivo_excel(uploaded_file):
 st.markdown('<div class="main-header">🎯 MICMAC PRO</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Análisis Estructural con Conversor Integrado</div>', unsafe_allow_html=True)
 
+# Inicializar session state
+if 'matriz_procesada' not in st.session_state:
+    st.session_state.matriz_procesada = None
+if 'nombres_variables' not in st.session_state:
+    st.session_state.nombres_variables = None
+if 'codigos_variables' not in st.session_state:
+    st.session_state.codigos_variables = None
+if 'mapeo_codigos' not in st.session_state:
+    st.session_state.mapeo_codigos = None
+if 'resultados' not in st.session_state:
+    st.session_state.resultados = None
+if 'hojas_excel' not in st.session_state:
+    st.session_state.hojas_excel = None
+
 with st.sidebar:
     st.header("⚙️ Configuración")
     
@@ -230,8 +356,34 @@ with st.sidebar:
     uploaded_file = st.file_uploader(
         "Subir archivo Excel",
         type=['xlsx', 'xls'],
-        help="Primera columna = nombres de variables. Se excluyen automáticamente filas/columnas de SUMA/TOTAL."
+        help="Soporta archivos con múltiples hojas. Detecta automáticamente la matriz."
     )
+    
+    # Selector de hoja (aparece después de cargar archivo)
+    hoja_seleccionada = None
+    if uploaded_file is not None:
+        # Leer hojas disponibles
+        try:
+            xl_temp = pd.ExcelFile(uploaded_file)
+            st.session_state.hojas_excel = xl_temp.sheet_names
+            uploaded_file.seek(0)  # Reset file pointer
+        except:
+            st.session_state.hojas_excel = None
+        
+        if st.session_state.hojas_excel and len(st.session_state.hojas_excel) > 1:
+            # Preseleccionar hoja con "MID" o "Matriz"
+            default_idx = 0
+            for i, hoja in enumerate(st.session_state.hojas_excel):
+                if 'MID' in hoja.upper() or 'MATRIZ' in hoja.upper():
+                    default_idx = i
+                    break
+            
+            hoja_seleccionada = st.selectbox(
+                "📑 Seleccionar hoja:",
+                st.session_state.hojas_excel,
+                index=default_idx,
+                help="Selecciona la hoja que contiene la matriz MID"
+            )
     
     st.divider()
     
@@ -250,6 +402,8 @@ with st.sidebar:
     
     st.subheader("3. Visualización")
     mostrar_etiquetas = st.checkbox("Mostrar etiquetas", value=True)
+    usar_codigos = st.checkbox("Usar códigos cortos", value=True,
+        help="Muestra códigos como TENS_GEO en lugar del nombre completo")
     tamaño_fuente = st.slider("Tamaño fuente", min_value=8, max_value=16, value=10)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -260,14 +414,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📥 Exportar"
 ])
 
-# Inicializar session state
-if 'matriz_procesada' not in st.session_state:
-    st.session_state.matriz_procesada = None
-if 'nombres_variables' not in st.session_state:
-    st.session_state.nombres_variables = None
-if 'resultados' not in st.session_state:
-    st.session_state.resultados = None
-
 # ============================================================
 # TAB 1: DATOS
 # ============================================================
@@ -275,13 +421,18 @@ with tab1:
     st.header("📋 Carga y Visualización de Datos")
     
     if uploaded_file is not None:
-        df_procesado, nombres, mensaje = procesar_archivo_excel(uploaded_file)
+        df_procesado, nombres, hojas, mensaje = procesar_archivo_excel(uploaded_file, hoja_seleccionada)
         
         if df_procesado is not None:
             st.success(mensaje)
             
+            # Generar códigos
+            codigos, mapeo = generar_codigos_y_mapeo(nombres)
+            
             st.session_state.matriz_procesada = df_procesado
             st.session_state.nombres_variables = nombres
+            st.session_state.codigos_variables = codigos
+            st.session_state.mapeo_codigos = mapeo
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Variables", len(nombres))
@@ -291,37 +442,27 @@ with tab1:
             densidad = (M_temp != 0).sum() / M_temp.size * 100
             col3.metric("Densidad", f"{densidad:.1f}%")
             
-            st.subheader("Vista previa de la matriz")
+            # Tabla de códigos
+            st.subheader("🏷️ Tabla de Variables")
+            df_codigos = pd.DataFrame({
+                'Código': codigos,
+                'Variable': nombres
+            })
+            st.dataframe(df_codigos, use_container_width=True, height=300)
+            
+            st.subheader("📊 Vista previa de la matriz")
             st.dataframe(df_procesado, use_container_width=True, height=400)
             
-            # Estadísticas
-            st.subheader("📊 Estadísticas")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                valores = M_temp.flatten()
-                valores_sin_cero = valores[valores != 0]
-                
-                if len(valores_sin_cero) > 0:
-                    fig_hist = px.histogram(x=valores_sin_cero, nbins=20, 
-                        title="Distribución de influencias (sin ceros)")
-                    st.plotly_chart(fig_hist, use_container_width=True)
-            
-            with col2:
-                st.write("**Resumen:**")
-                st.write(f"- Mínimo: {M_temp.min()}")
-                st.write(f"- Máximo: {M_temp.max()}")
-                st.write(f"- Media: {M_temp.mean():.2f}")
-                st.write(f"- Mediana: {np.median(M_temp):.2f}")
         else:
             st.error(f"❌ {mensaje}")
     else:
         st.info("👆 Sube un archivo Excel con tu matriz de influencias")
         st.markdown("""
-        **Formato esperado:**
-        - Primera columna: nombres de las variables
-        - Primera fila (header): nombres de las variables  
-        - Filas/columnas con "SUMA" o "TOTAL" se excluyen automáticamente
+        **Formatos soportados:**
+        - Archivos con múltiples hojas (selecciona la hoja con la matriz)
+        - Matrices con encabezados descriptivos (se detectan automáticamente)
+        - Diagonal marcada con 'X' (se convierte a 0)
+        - Filas/columnas de totales (se excluyen automáticamente)
         """)
 
 # ============================================================
@@ -333,26 +474,25 @@ with tab2:
     if st.session_state.matriz_procesada is not None:
         df = st.session_state.matriz_procesada
         nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
         
         M = df.values.astype(float)
         n = M.shape[0]
         
         st.info(f"📐 Matriz: {n}x{n} variables")
         
-        # Detectar K
         if K_auto:
             K_usado = detectar_convergencia(M)
             st.success(f"🔍 K óptimo: **{K_usado}**")
         else:
             K_usado = K_manual
         
-        # Calcular
         MIDI = calcular_midi(M, alpha=alpha, K=K_usado)
         motricidad, dependencia = calcular_motricidad_dependencia(MIDI)
         clasificacion, med_mot, med_dep = clasificar_variables(motricidad, dependencia)
         
-        # DataFrame de resultados
         df_resultados = pd.DataFrame({
+            'Código': codigos,
             'Variable': nombres,
             'Motricidad': np.round(motricidad, 2),
             'Dependencia': np.round(dependencia, 2),
@@ -361,7 +501,6 @@ with tab2:
         df_resultados['Ranking'] = df_resultados['Motricidad'].rank(ascending=False).astype(int)
         df_resultados = df_resultados.sort_values('Motricidad', ascending=False)
         
-        # Guardar
         st.session_state.resultados = {
             'df_resultados': df_resultados,
             'MIDI': MIDI,
@@ -402,8 +541,9 @@ with tab2:
         
         # Heatmap
         st.subheader("🔢 Matriz MIDI")
+        etiquetas = codigos if usar_codigos else nombres
         fig_midi = go.Figure(data=go.Heatmap(
-            z=MIDI, x=nombres, y=nombres, colorscale='Blues'
+            z=MIDI, x=etiquetas, y=etiquetas, colorscale='Blues'
         ))
         fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
         st.plotly_chart(fig_midi, use_container_width=True)
@@ -420,13 +560,15 @@ with tab3:
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
         df_res = res['df_resultados'].copy()
+        codigos = st.session_state.codigos_variables
+        nombres = st.session_state.nombres_variables
         
         st.markdown("""
         <div class="info-box">
-        🔴 <b>Determinantes:</b> Palancas de acción (alta motricidad, baja dependencia)<br>
-        🔵 <b>Clave:</b> Nudo del sistema (alta motricidad, alta dependencia)<br>
-        💧 <b>Resultado:</b> Indicadores (baja motricidad, alta dependencia)<br>
-        🟠 <b>Autónomas:</b> Excluidas (baja motricidad, baja dependencia)
+        🔴 <b>Determinantes:</b> Palancas de acción<br>
+        🔵 <b>Clave:</b> Nudo del sistema<br>
+        💧 <b>Resultado:</b> Indicadores<br>
+        🟠 <b>Autónomas:</b> Excluidas
         </div>
         """, unsafe_allow_html=True)
         
@@ -440,18 +582,23 @@ with tab3:
         fig = go.Figure()
         
         for clasif, color in color_map.items():
-            df_temp = df_res[df_res['Clasificación'] == clasif]
+            mask = df_res['Clasificación'] == clasif
+            df_temp = df_res[mask]
             if len(df_temp) > 0:
+                etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
+                hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_temp['Código'], df_temp['Variable'])]
+                
                 fig.add_trace(go.Scatter(
                     x=df_temp['Dependencia'],
                     y=df_temp['Motricidad'],
                     mode='markers+text' if mostrar_etiquetas else 'markers',
                     name=clasif,
-                    text=df_temp['Variable'] if mostrar_etiquetas else None,
+                    text=etiquetas_temp if mostrar_etiquetas else None,
                     textposition='top center',
                     textfont=dict(size=tamaño_fuente),
                     marker=dict(size=12, color=color, line=dict(width=1, color='black')),
-                    hovertemplate="<b>%{text}</b><br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>"
+                    hovertemplate="%{customdata}<br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>",
+                    customdata=hover_text
                 ))
         
         # Líneas de umbral
@@ -476,6 +623,10 @@ with tab3:
         
         st.plotly_chart(fig, use_container_width=True)
         
+        # Tabla de referencia
+        with st.expander("📋 Ver tabla de referencia", expanded=False):
+            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
+        
         # Resumen por cuadrante
         st.subheader("📊 Distribución por Cuadrantes")
         resumen = df_res.groupby('Clasificación').agg({
@@ -498,17 +649,21 @@ with tab4:
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
         df_res = res['df_resultados'].copy()
+        codigos = st.session_state.codigos_variables
+        nombres = st.session_state.nombres_variables
         
         st.markdown("""
         <div class="info-box">
         <b>Eje Estratégico:</b> La diagonal donde Motricidad = Dependencia.<br>
-        Variables cerca de esta línea tienen <b>máximo valor estratégico</b> porque participan
-        intensamente en los circuitos de retroalimentación del sistema.
+        Variables cerca de esta línea tienen <b>máximo valor estratégico</b>.
         </div>
         """, unsafe_allow_html=True)
         
         df_res['Valor_Estrategico'] = df_res['Motricidad'] + df_res['Dependencia']
         df_res['Distancia_Eje'] = np.abs(df_res['Motricidad'] - df_res['Dependencia'])
+        
+        etiquetas = df_res['Código'].tolist() if usar_codigos else df_res['Variable'].tolist()
+        hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_res['Código'], df_res['Variable'])]
         
         fig = go.Figure()
         
@@ -516,7 +671,7 @@ with tab4:
             x=df_res['Dependencia'],
             y=df_res['Motricidad'],
             mode='markers+text' if mostrar_etiquetas else 'markers',
-            text=df_res['Variable'] if mostrar_etiquetas else None,
+            text=etiquetas if mostrar_etiquetas else None,
             textposition='top center',
             textfont=dict(size=tamaño_fuente),
             marker=dict(
@@ -526,10 +681,10 @@ with tab4:
                 showscale=True,
                 colorbar=dict(title="Valor<br>Estratégico")
             ),
-            hovertemplate="<b>%{text}</b><br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>"
+            hovertemplate="%{customdata}<br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>",
+            customdata=hover_text
         ))
         
-        # Diagonal
         max_val = max(max(res['motricidad']), max(res['dependencia'])) * 1.1
         fig.add_trace(go.Scatter(
             x=[0, max_val], y=[0, max_val],
@@ -540,11 +695,14 @@ with tab4:
         fig.update_layout(title="Eje Estratégico", height=600, xaxis_title="Dependencia", yaxis_title="Motricidad")
         st.plotly_chart(fig, use_container_width=True)
         
+        with st.expander("📋 Ver tabla de referencia", expanded=False):
+            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
+        
         st.subheader("🏆 Top 10 Variables Estratégicas")
         top10 = df_res.nlargest(10, 'Valor_Estrategico')[
-            ['Variable', 'Motricidad', 'Dependencia', 'Valor_Estrategico', 'Distancia_Eje', 'Clasificación']
+            ['Código', 'Variable', 'Motricidad', 'Dependencia', 'Valor_Estrategico', 'Clasificación']
         ]
-        top10.columns = ['Variable', 'Motricidad', 'Dependencia', 'Valor Estratégico', 'Distancia al Eje', 'Clasificación']
+        top10.columns = ['Código', 'Variable', 'Motricidad', 'Dependencia', 'Valor Estratégico', 'Clasificación']
         st.dataframe(top10, use_container_width=True)
         
     else:
@@ -558,6 +716,8 @@ with tab5:
     
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
+        codigos = st.session_state.codigos_variables
+        nombres = st.session_state.nombres_variables
         
         nombre = st.text_input("Nombre del proyecto", value="micmac_analisis")
         
@@ -567,8 +727,9 @@ with tab5:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 res['df_resultados'].to_excel(writer, sheet_name='Resultados', index=False)
                 
-                nombres = st.session_state.nombres_variables
-                pd.DataFrame(res['MIDI'], index=nombres, columns=nombres).to_excel(writer, sheet_name='MIDI')
+                pd.DataFrame(res['MIDI'], index=codigos, columns=codigos).to_excel(writer, sheet_name='MIDI')
+                
+                pd.DataFrame({'Código': codigos, 'Variable': nombres}).to_excel(writer, sheet_name='Codigos', index=False)
                 
                 pd.DataFrame({
                     'Parámetro': ['Alpha', 'K', 'Variables', 'Determinantes', 'Clave', 'Resultado', 'Autónomas'],
@@ -593,6 +754,6 @@ with tab5:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v4.4</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | Martin Pratto Chiarella 2026
+<b>MICMAC PRO v5.0</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | Martin Pratto Chiarella 2025
 </div>
 """, unsafe_allow_html=True)

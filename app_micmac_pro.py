@@ -2,9 +2,9 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting / Martín PRATTO CHIARELLA
+Autor: JETLEX Strategic Consulting / Martín PRATTO
 Basado en el método de Michel Godet (1990)
-Versión: 5.1 - Descarga gráficos + Informe + Nuevos análisis estratégicos
+Versión: 5.2 - Descarga gráficos mejorada (SVG + botón cámara)
 """
 
 import streamlit as st
@@ -14,7 +14,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from io import BytesIO
 import re
-import base64
 from datetime import datetime
 
 # Configuración de la página
@@ -47,29 +46,66 @@ st.markdown("""
         border-left: 4px solid #1f77b4;
         margin: 1rem 0;
     }
-    .download-btn {
+    .download-tip {
+        background-color: #f0f8ff;
+        padding: 0.5rem 1rem;
+        border-radius: 0.3rem;
+        font-size: 0.9rem;
         margin: 0.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# FUNCIONES DE DESCARGA DE GRÁFICOS
+# CONFIGURACIÓN PLOTLY PARA DESCARGA
 # ============================================================
 
-def get_plotly_download_buttons(fig, nombre_base, key_suffix=""):
-    """Genera botones de descarga para un gráfico Plotly"""
-    col1, col2 = st.columns(2)
+# Configuración para que cada gráfico tenga botón de descarga
+PLOTLY_CONFIG = {
+    'toImageButtonOptions': {
+        'format': 'png',
+        'filename': 'grafico_micmac',
+        'height': 800,
+        'width': 1200,
+        'scale': 2
+    },
+    'displaylogo': False,
+    'modeBarButtonsToAdd': ['downloadSVG'],
+    'displayModeBar': True
+}
+
+def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
+    """Muestra un gráfico Plotly con opciones de descarga"""
+    
+    # Configuración personalizada para este gráfico
+    config = {
+        'toImageButtonOptions': {
+            'format': 'png',
+            'filename': nombre_base,
+            'height': 800,
+            'width': 1200,
+            'scale': 2
+        },
+        'displaylogo': False,
+        'displayModeBar': True,
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+    }
+    
+    # Mostrar el gráfico con la barra de herramientas visible
+    st.plotly_chart(fig, use_container_width=True, config=config)
+    
+    # Botones de descarga adicionales
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         # Descargar como HTML interactivo
         html_buffer = BytesIO()
-        html_content = fig.to_html(include_plotlyjs=True, full_html=True)
+        html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
         html_buffer.write(html_content.encode())
         html_buffer.seek(0)
         
         st.download_button(
-            label="📥 Descargar HTML interactivo",
+            label="📥 HTML Interactivo",
             data=html_buffer,
             file_name=f"{nombre_base}.html",
             mime="text/html",
@@ -77,18 +113,40 @@ def get_plotly_download_buttons(fig, nombre_base, key_suffix=""):
         )
     
     with col2:
-        # Descargar como PNG
+        # Descargar como SVG (no requiere kaleido)
+        try:
+            svg_str = fig.to_image(format="svg").decode('utf-8')
+            st.download_button(
+                label="📥 SVG (Vector)",
+                data=svg_str,
+                file_name=f"{nombre_base}.svg",
+                mime="image/svg+xml",
+                key=f"svg_{nombre_base}_{key_suffix}"
+            )
+        except Exception:
+            # Si SVG falla, mostrar instrucción alternativa
+            st.info("📷 Usa el ícono de cámara en el gráfico")
+    
+    with col3:
+        # Intentar PNG con kaleido
         try:
             img_bytes = fig.to_image(format="png", width=1200, height=800, scale=2)
             st.download_button(
-                label="📥 Descargar PNG",
+                label="📥 PNG (Imagen)",
                 data=img_bytes,
                 file_name=f"{nombre_base}.png",
                 mime="image/png",
                 key=f"png_{nombre_base}_{key_suffix}"
             )
-        except Exception as e:
-            st.info("💡 Para descargar PNG, instala: `pip install kaleido`")
+        except Exception:
+            st.markdown("📷 **PNG:** Clic en 📷 del gráfico")
+    
+    # Tip de descarga
+    st.markdown("""
+    <div class="download-tip">
+    💡 <b>Tip:</b> También puedes usar el ícono 📷 en la esquina superior derecha del gráfico para guardar como PNG
+    </div>
+    """, unsafe_allow_html=True)
 
 # ============================================================
 # FUNCIONES DE EXTRACCIÓN DE CÓDIGOS
@@ -175,7 +233,7 @@ def clasificar_variables(motricidad, dependencia):
             clasificacion.append("Determinantes")
         elif mot >= med_mot and dep >= med_dep:
             clasificacion.append("Clave")
-        elif mot < med_dep and dep >= med_dep:
+        elif mot < med_mot and dep >= med_dep:
             clasificacion.append("Variables resultado")
         else:
             clasificacion.append("Autónomas")
@@ -212,18 +270,6 @@ def detectar_convergencia(M, K_max=10, tolerancia=0.01):
 # FUNCIONES DE ANÁLISIS ADICIONALES
 # ============================================================
 
-def calcular_estabilidad_ranking(M, alpha=0.5, K_max=5):
-    """Calcula cómo cambia el ranking con diferentes valores de K"""
-    rankings = {}
-    for K in range(1, K_max + 1):
-        if K == 1:
-            MIDI = M.copy()
-        else:
-            MIDI = calcular_midi(M, alpha=alpha, K=K)
-        mot, _ = calcular_motricidad_dependencia(MIDI)
-        rankings[f"K={K}"] = np.argsort(mot)[::-1]
-    return rankings
-
 def identificar_relaciones_fuertes(M, nombres, umbral=2):
     """Identifica las relaciones más fuertes de la matriz"""
     relaciones = []
@@ -237,11 +283,6 @@ def identificar_relaciones_fuertes(M, nombres, umbral=2):
                     'Intensidad': M[i, j]
                 })
     return sorted(relaciones, key=lambda x: x['Intensidad'], reverse=True)
-
-def calcular_indice_inestabilidad(motricidad, dependencia):
-    """Calcula índice de inestabilidad para cada variable"""
-    # Variables con alta motricidad Y alta dependencia son más inestables
-    return motricidad * dependencia
 
 # ============================================================
 # PROCESADOR ROBUSTO DE ARCHIVOS EXCEL
@@ -383,69 +424,54 @@ def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
 # ============================================================
 
 def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=True):
-    """Crea un gráfico de red de influencias fuertes"""
-    import networkx as nx
-    
+    """Crea un gráfico de red de influencias fuertes usando Plotly (sin networkx)"""
     etiquetas = codigos if usar_codigos else nombres
+    n = len(etiquetas)
     
-    # Crear grafo dirigido
-    G = nx.DiGraph()
+    # Crear posiciones en círculo
+    angles = np.linspace(0, 2*np.pi, n, endpoint=False)
+    pos_x = np.cos(angles)
+    pos_y = np.sin(angles)
     
-    # Agregar nodos
-    for i, nombre in enumerate(etiquetas):
-        G.add_node(nombre)
-    
-    # Agregar aristas (solo relaciones >= umbral)
-    for i in range(len(M)):
-        for j in range(len(M)):
-            if i != j and M[i, j] >= umbral:
-                G.add_edge(etiquetas[i], etiquetas[j], weight=M[i, j])
-    
-    # Layout
-    pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
-    
-    # Crear traces para Plotly
+    # Crear traces para aristas
     edge_x = []
     edge_y = []
-    edge_weights = []
+    edge_colors = []
     
-    for edge in G.edges(data=True):
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-        edge_weights.append(edge[2]['weight'])
+    for i in range(n):
+        for j in range(n):
+            if i != j and M[i, j] >= umbral:
+                edge_x.extend([pos_x[i], pos_x[j], None])
+                edge_y.extend([pos_y[i], pos_y[j], None])
     
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
-        line=dict(width=1, color='#888'),
+        line=dict(width=1, color='rgba(150,150,150,0.5)'),
         hoverinfo='none',
         mode='lines',
         name='Influencias'
     )
     
-    node_x = []
-    node_y = []
-    node_text = []
+    # Calcular tamaño de nodos por influencia recibida
+    influencia_recibida = M.sum(axis=0)
+    node_sizes = 15 + (influencia_recibida / influencia_recibida.max()) * 30
     
-    for node in G.nodes():
-        x, y = pos[node]
-        node_x.append(x)
-        node_y.append(y)
-        node_text.append(node)
-    
-    # Calcular tamaño por grado de entrada
-    node_sizes = [15 + G.in_degree(node) * 5 for node in G.nodes()]
+    # Colores por motricidad
+    motricidad = M.sum(axis=1)
     
     node_trace = go.Scatter(
-        x=node_x, y=node_y,
+        x=pos_x, y=pos_y,
         mode='markers+text',
         hoverinfo='text',
-        text=node_text,
+        text=etiquetas,
         textposition='top center',
+        hovertext=[f"{etiquetas[i]}<br>Influencia recibida: {influencia_recibida[i]:.0f}" for i in range(n)],
         marker=dict(
             size=node_sizes,
-            color='#1f77b4',
+            color=motricidad,
+            colorscale='YlOrRd',
+            showscale=True,
+            colorbar=dict(title="Motricidad"),
             line=dict(width=2, color='white')
         ),
         name='Variables'
@@ -467,7 +493,6 @@ def crear_grafico_estabilidad(M, nombres, codigos, alpha=0.5, usar_codigos=True)
     """Gráfico de estabilidad del ranking por K"""
     etiquetas = codigos if usar_codigos else nombres
     
-    # Calcular rankings para diferentes K
     data = []
     for K in range(1, 6):
         if K == 1:
@@ -476,23 +501,20 @@ def crear_grafico_estabilidad(M, nombres, codigos, alpha=0.5, usar_codigos=True)
             MIDI = calcular_midi(M, alpha=alpha, K=K)
         mot, _ = calcular_motricidad_dependencia(MIDI)
         
-        for i, (nombre, m) in enumerate(zip(etiquetas, mot)):
-            data.append({
-                'K': K,
-                'Variable': nombre,
-                'Motricidad': m,
-                'Ranking': len(mot) - np.argsort(np.argsort(mot))[i]
-            })
+        rankings = len(mot) - np.argsort(np.argsort(mot))
+        for i, (nombre, rank) in enumerate(zip(etiquetas, rankings)):
+            data.append({'K': K, 'Variable': nombre, 'Ranking': rank, 'Motricidad': mot[i]})
     
     df = pd.DataFrame(data)
     
-    # Gráfico de líneas para top 10
+    # Top 10 variables
     top_vars = df[df['K'] == 5].nlargest(10, 'Motricidad')['Variable'].tolist()
     df_top = df[df['Variable'].isin(top_vars)]
     
     fig = px.line(df_top, x='K', y='Ranking', color='Variable',
         title='Estabilidad del Ranking (Top 10) según Profundidad K',
-        labels={'K': 'Profundidad K', 'Ranking': 'Posición en Ranking'})
+        labels={'K': 'Profundidad K', 'Ranking': 'Posición en Ranking'},
+        markers=True)
     
     fig.update_yaxes(autorange="reversed")
     fig.update_layout(height=500)
@@ -518,10 +540,7 @@ def crear_grafico_distribucion_cuadrantes(clasificacion):
         textinfo='label+percent+value'
     )])
     
-    fig.update_layout(
-        title='Distribución de Variables por Cuadrante',
-        height=400
-    )
+    fig.update_layout(title='Distribución de Variables por Cuadrante', height=400)
     
     return fig
 
@@ -549,32 +568,6 @@ def crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos
     
     return fig
 
-def crear_grafico_radar_variables_clave(df_resultados, top_n=8):
-    """Gráfico radar de las variables más estratégicas"""
-    df_top = df_resultados.nlargest(top_n, 'Motricidad')
-    
-    # Normalizar valores
-    max_mot = df_resultados['Motricidad'].max()
-    max_dep = df_resultados['Dependencia'].max()
-    
-    fig = go.Figure()
-    
-    for _, row in df_top.iterrows():
-        fig.add_trace(go.Scatterpolar(
-            r=[row['Motricidad']/max_mot, row['Dependencia']/max_dep],
-            theta=['Motricidad', 'Dependencia'],
-            fill='toself',
-            name=row['Código']
-        ))
-    
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        title=f'Perfil de las {top_n} Variables Más Motrices',
-        height=500
-    )
-    
-    return fig
-
 def crear_grafico_inestabilidad(df_resultados):
     """Gráfico de índice de inestabilidad"""
     df = df_resultados.copy()
@@ -592,6 +585,36 @@ def crear_grafico_inestabilidad(df_resultados):
         })
     
     fig.update_layout(height=400)
+    
+    return fig
+
+def crear_grafico_comparativo_barras(df_resultados, top_n=15):
+    """Gráfico de barras comparativo Motricidad vs Dependencia"""
+    df = df_resultados.nlargest(top_n, 'Motricidad').copy()
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='Motricidad',
+        x=df['Código'],
+        y=df['Motricidad'],
+        marker_color='#FF6B6B'
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='Dependencia',
+        x=df['Código'],
+        y=df['Dependencia'],
+        marker_color='#4ECDC4'
+    ))
+    
+    fig.update_layout(
+        title=f'Comparativo Motricidad vs Dependencia (Top {top_n})',
+        barmode='group',
+        height=500,
+        xaxis_title='Variable',
+        yaxis_title='Valor'
+    )
     
     return fig
 
@@ -857,8 +880,7 @@ with tab2:
             z=MIDI, x=etiquetas, y=etiquetas, colorscale='Blues'
         ))
         fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
-        st.plotly_chart(fig_midi, use_container_width=True)
-        get_plotly_download_buttons(fig_midi, "matriz_midi", "tab2")
+        mostrar_grafico_con_descargas(fig_midi, "matriz_midi", "tab2")
         
     else:
         st.warning("⚠️ Primero carga una matriz en 'Datos'")
@@ -927,14 +949,12 @@ with tab3:
             xaxis_title="Dependencia", yaxis_title="Motricidad", height=700
         )
         
-        st.plotly_chart(fig, use_container_width=True)
-        get_plotly_download_buttons(fig, "subsistemas", "tab3")
+        mostrar_grafico_con_descargas(fig, "subsistemas", "tab3")
         
         # Distribución pie chart
         st.subheader("📊 Distribución por Cuadrantes")
         fig_pie = crear_grafico_distribucion_cuadrantes(res['clasificacion'])
-        st.plotly_chart(fig_pie, use_container_width=True)
-        get_plotly_download_buttons(fig_pie, "distribucion_cuadrantes", "tab3_pie")
+        mostrar_grafico_con_descargas(fig_pie, "distribucion_cuadrantes", "tab3_pie")
         
     else:
         st.warning("⚠️ Ejecuta primero el análisis")
@@ -984,8 +1004,7 @@ with tab4:
         ))
         
         fig.update_layout(title="Eje Estratégico", height=600, xaxis_title="Dependencia", yaxis_title="Motricidad")
-        st.plotly_chart(fig, use_container_width=True)
-        get_plotly_download_buttons(fig, "eje_estrategico", "tab4")
+        mostrar_grafico_con_descargas(fig, "eje_estrategico", "tab4")
         
         st.subheader("🏆 Top 10 Variables Estratégicas")
         top10 = df_res.nlargest(10, 'Valor_Estrategico')[
@@ -1010,50 +1029,39 @@ with tab5:
         
         # 1. Red de Influencias
         st.subheader("🕸️ Red de Influencias Fuertes")
-        umbral_red = st.slider("Umbral de intensidad para mostrar conexión", min_value=1, max_value=3, value=2)
+        umbral_red = st.slider("Umbral de intensidad", min_value=1, max_value=3, value=2, key="umbral_red")
         
-        try:
-            fig_red = crear_grafico_red_influencias(M, nombres, codigos, umbral=umbral_red, usar_codigos=usar_codigos)
-            st.plotly_chart(fig_red, use_container_width=True)
-            get_plotly_download_buttons(fig_red, "red_influencias", "tab5_red")
-        except Exception as e:
-            st.warning(f"No se pudo generar el gráfico de red: {e}")
+        fig_red = crear_grafico_red_influencias(M, nombres, codigos, umbral=umbral_red, usar_codigos=usar_codigos)
+        mostrar_grafico_con_descargas(fig_red, "red_influencias", "tab5_red")
         
         st.divider()
         
-        # 2. Estabilidad del Ranking
-        st.subheader("📊 Estabilidad del Ranking según Profundidad K")
+        # 2. Comparativo Barras
+        st.subheader("📊 Comparativo Motricidad vs Dependencia")
+        fig_comp = crear_grafico_comparativo_barras(res['df_resultados'], top_n=15)
+        mostrar_grafico_con_descargas(fig_comp, "comparativo_mot_dep", "tab5_comp")
+        
+        st.divider()
+        
+        # 3. Estabilidad del Ranking
+        st.subheader("📈 Estabilidad del Ranking según Profundidad K")
         fig_estab = crear_grafico_estabilidad(M, nombres, codigos, alpha=res['alpha'], usar_codigos=usar_codigos)
-        st.plotly_chart(fig_estab, use_container_width=True)
-        get_plotly_download_buttons(fig_estab, "estabilidad_ranking", "tab5_estab")
+        mostrar_grafico_con_descargas(fig_estab, "estabilidad_ranking", "tab5_estab")
         
         st.divider()
         
-        # 3. Relaciones Fuertes
+        # 4. Relaciones Fuertes
         st.subheader("💪 Top Relaciones de Influencia")
         fig_rel = crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos=usar_codigos)
-        st.plotly_chart(fig_rel, use_container_width=True)
-        get_plotly_download_buttons(fig_rel, "relaciones_fuertes", "tab5_rel")
+        mostrar_grafico_con_descargas(fig_rel, "relaciones_fuertes", "tab5_rel")
         
         st.divider()
         
-        # 4. Índice de Inestabilidad
+        # 5. Índice de Inestabilidad
         st.subheader("⚠️ Índice de Inestabilidad")
-        st.markdown("""
-        Variables con alto índice de inestabilidad (Motricidad × Dependencia) son 
-        **amplificadores de cambios** en el sistema. Requieren monitoreo constante.
-        """)
+        st.markdown("Variables con alto índice (Motricidad × Dependencia) son **amplificadores de cambios**.")
         fig_inest = crear_grafico_inestabilidad(res['df_resultados'])
-        st.plotly_chart(fig_inest, use_container_width=True)
-        get_plotly_download_buttons(fig_inest, "indice_inestabilidad", "tab5_inest")
-        
-        st.divider()
-        
-        # 5. Radar de Variables Clave
-        st.subheader("🎯 Perfil Radar de Variables Estratégicas")
-        fig_radar = crear_grafico_radar_variables_clave(res['df_resultados'], top_n=8)
-        st.plotly_chart(fig_radar, use_container_width=True)
-        get_plotly_download_buttons(fig_radar, "radar_variables", "tab5_radar")
+        mostrar_grafico_con_descargas(fig_inest, "indice_inestabilidad", "tab5_inest")
         
     else:
         st.warning("⚠️ Ejecuta primero el análisis")
@@ -1070,10 +1078,6 @@ with tab6:
         codigos = st.session_state.codigos_variables
         M = st.session_state.M_original
         
-        st.markdown("""
-        Genera un informe completo con todos los resultados del análisis MICMAC.
-        """)
-        
         nombre_proyecto = st.text_input("Nombre del proyecto", value="Analisis_MICMAC")
         
         col1, col2 = st.columns(2)
@@ -1081,24 +1085,24 @@ with tab6:
         with col1:
             st.subheader("📊 Informe Excel Completo")
             st.markdown("""
-            Incluye:
+            **Incluye:**
             - Resumen ejecutivo
             - Ranking de variables
             - Variables por cuadrante
             - Matriz MIDI
             - Relaciones fuertes
             - Análisis estratégico
+            - Diccionario de variables
             """)
             
-            if st.button("📥 Generar Informe Excel", type="primary"):
-                buffer = generar_informe_excel(res, nombres, codigos, M, nombre_proyecto)
-                st.download_button(
-                    label="📥 Descargar Informe Excel",
-                    data=buffer,
-                    file_name=f"{nombre_proyecto}_informe_completo.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                st.success("✅ Informe generado!")
+            buffer = generar_informe_excel(res, nombres, codigos, M, nombre_proyecto)
+            st.download_button(
+                label="📥 Descargar Informe Excel Completo",
+                data=buffer,
+                file_name=f"{nombre_proyecto}_informe_completo.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary"
+            )
         
         with col2:
             st.subheader("📋 Resumen del Análisis")
@@ -1111,10 +1115,10 @@ with tab6:
             - K: {res['K']}
             
             **Distribución:**
-            - Determinantes: {sum(c == 'Determinantes' for c in res['clasificacion'])}
-            - Clave: {sum(c == 'Clave' for c in res['clasificacion'])}
-            - Resultado: {sum(c == 'Variables resultado' for c in res['clasificacion'])}
-            - Autónomas: {sum(c == 'Autónomas' for c in res['clasificacion'])}
+            - 🔴 Determinantes: {sum(c == 'Determinantes' for c in res['clasificacion'])}
+            - 🔵 Clave: {sum(c == 'Clave' for c in res['clasificacion'])}
+            - 💧 Resultado: {sum(c == 'Variables resultado' for c in res['clasificacion'])}
+            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res['clasificacion'])}
             """)
         
     else:
@@ -1124,48 +1128,47 @@ with tab6:
 # TAB 7: EXPORTAR
 # ============================================================
 with tab7:
-    st.header("📥 Exportar Resultados")
+    st.header("📥 Exportar Resultados Individuales")
     
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
         codigos = st.session_state.codigos_variables
         nombres = st.session_state.nombres_variables
         
-        st.subheader("Exportaciones Individuales")
+        st.subheader("Exportaciones CSV")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Ranking CSV
             csv_ranking = res['df_resultados'].to_csv(index=False)
-            st.download_button(
-                "📥 Ranking (CSV)",
-                csv_ranking,
-                "ranking_variables.csv",
-                "text/csv"
-            )
+            st.download_button("📥 Ranking (CSV)", csv_ranking, "ranking_variables.csv", "text/csv")
         
         with col2:
-            # Matriz MIDI CSV
             df_midi = pd.DataFrame(res['MIDI'], index=codigos, columns=codigos)
             csv_midi = df_midi.to_csv()
-            st.download_button(
-                "📥 Matriz MIDI (CSV)",
-                csv_midi,
-                "matriz_midi.csv",
-                "text/csv"
-            )
+            st.download_button("📥 Matriz MIDI (CSV)", csv_midi, "matriz_midi.csv", "text/csv")
         
         with col3:
-            # Diccionario
             df_dict = pd.DataFrame({'Código': codigos, 'Variable': nombres})
             csv_dict = df_dict.to_csv(index=False)
-            st.download_button(
-                "📥 Diccionario (CSV)",
-                csv_dict,
-                "diccionario_variables.csv",
-                "text/csv"
-            )
+            st.download_button("📥 Diccionario (CSV)", csv_dict, "diccionario_variables.csv", "text/csv")
+        
+        st.divider()
+        
+        st.subheader("💡 Cómo descargar gráficos como imagen")
+        st.markdown("""
+        **Opción 1 - Botón de cámara (recomendado):**
+        1. Pasa el mouse sobre cualquier gráfico
+        2. Aparecerá una barra de herramientas en la esquina superior derecha
+        3. Haz clic en el ícono de **📷 cámara** para descargar como PNG
+        
+        **Opción 2 - Botones de descarga:**
+        - Cada gráfico tiene botones para descargar en HTML (interactivo) o SVG (vector)
+        
+        **Opción 3 - Captura de pantalla:**
+        - Windows: `Win + Shift + S`
+        - Mac: `Cmd + Shift + 4`
+        """)
         
     else:
         st.warning("⚠️ Ejecuta primero el análisis")
@@ -1174,6 +1177,6 @@ with tab7:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.1</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | MARTIN PRATTO CHIARELLA 2025
+<b>MICMAC PRO v5.2</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | MARTIN PRATTO 2025
 </div>
 """, unsafe_allow_html=True)

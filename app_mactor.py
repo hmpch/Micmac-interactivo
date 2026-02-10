@@ -200,7 +200,7 @@ def procesar_archivo_mactor(uploaded_file):
 
 def calcular_MIDI(MAA, k=2):
     """Calcula la Matriz de Influencias Directas e Indirectas"""
-    M = MAA.values.astype(float)
+    M = MAA.values.astype(float).copy()
     n = M.shape[0]
     
     MIDI = M.copy()
@@ -222,7 +222,7 @@ def calcular_balance_MIDI(MIDI):
     Ri_neto = Ii - Di
     
     return pd.DataFrame({
-        'Actor': MIDI.index,
+        'Actor': MIDI.index.tolist(),
         'Ii': np.round(Ii, 1),
         'Di': np.round(Di, 1),
         'Ri': np.round(Ri, 2),
@@ -252,7 +252,7 @@ def clasificar_actores(balance_df):
 
 def calcular_convergencias_divergencias(MAO):
     """Calcula matrices de convergencias y divergencias (simples y ponderadas)"""
-    M = MAO.values
+    M = MAO.values.copy()
     n_actores = M.shape[0]
     actores = MAO.index.tolist()
     
@@ -293,8 +293,8 @@ def calcular_3MAO(MAO_2, MIDI):
     if len(actores_comunes) == 0:
         return None
     
-    MAO = MAO_2.loc[actores_comunes].values
-    M = MIDI.loc[actores_comunes, actores_comunes].values
+    MAO = MAO_2.loc[actores_comunes].values.copy()
+    M = MIDI.loc[actores_comunes, actores_comunes].values.copy()
     
     Ii = M.sum(axis=1)
     Di = M.sum(axis=0)
@@ -311,19 +311,25 @@ def calcular_3MAO(MAO_2, MIDI):
 
 def calcular_balance_objetivos(MAO, balance_actores=None):
     """Calcula balance neto ponderado por objetivo (viabilidad)"""
-    M = MAO.values
-    objetivos = MAO.columns.tolist()
-    actores = MAO.index.tolist()
+    # Asegurar que tenemos un array numpy
+    if hasattr(MAO, 'values'):
+        M = MAO.values.copy()
+        objetivos = MAO.columns.tolist()
+        actores = MAO.index.tolist()
+    else:
+        M = np.array(MAO).copy()
+        objetivos = [f"O{i+1}" for i in range(M.shape[1])]
+        actores = [f"A{i+1}" for i in range(M.shape[0])]
     
     # Si hay balance de actores, usar coeficiente de poder
-    if balance_actores is not None:
+    if balance_actores is not None and isinstance(balance_actores, pd.DataFrame) and 'Ri_neto' in balance_actores.columns:
         Ri_neto = balance_actores['Ri_neto'].values
         if Ri_neto.max() != Ri_neto.min():
             coef_poder = 0.5 + (Ri_neto - Ri_neto.min()) / (Ri_neto.max() - Ri_neto.min())
         else:
-            coef_poder = np.ones(len(actores))
+            coef_poder = np.ones(M.shape[0])
     else:
-        coef_poder = np.ones(len(actores))
+        coef_poder = np.ones(M.shape[0])
     
     resultados = []
     
@@ -331,29 +337,29 @@ def calcular_balance_objetivos(MAO, balance_actores=None):
         posiciones = M[:, j]
         
         # Conteos simples
-        n_favor = (posiciones > 0).sum()
-        n_contra = (posiciones < 0).sum()
-        n_neutro = (posiciones == 0).sum()
+        n_favor = int((posiciones > 0).sum())
+        n_contra = int((posiciones < 0).sum())
+        n_neutro = int((posiciones == 0).sum())
         
         # Suma simple
-        suma_favor = np.where(posiciones > 0, posiciones, 0).sum()
-        suma_contra = np.where(posiciones < 0, posiciones, 0).sum()
+        suma_favor = float(np.where(posiciones > 0, posiciones, 0).sum())
+        suma_contra = float(np.where(posiciones < 0, posiciones, 0).sum())
         balance_simple = suma_favor + suma_contra
         
         # Balance ponderado por poder
-        balance_pond = np.sum(posiciones * coef_poder)
+        balance_pond = float(np.sum(posiciones * coef_poder[:len(posiciones)]))
         
         # Intensidad de movilización
-        movilizacion = np.abs(posiciones).sum()
+        movilizacion = float(np.abs(posiciones).sum())
         
         # Índice de viabilidad (normalizado)
         if movilizacion > 0:
             viabilidad = balance_pond / movilizacion
         else:
-            viabilidad = 0
+            viabilidad = 0.0
         
         resultados.append({
-            'Objetivo': obj,
+            'Objetivo': str(obj),
             'A_favor': n_favor,
             'Neutros': n_neutro,
             'En_contra': n_contra,
@@ -369,24 +375,24 @@ def calcular_balance_objetivos(MAO, balance_actores=None):
 
 def calcular_implicacion_actores(MAO):
     """Calcula el nivel de implicación de cada actor en el sistema"""
-    M = MAO.values
+    M = MAO.values.copy()
     actores = MAO.index.tolist()
     
     resultados = []
     for i, actor in enumerate(actores):
         posiciones = M[i, :]
         
-        n_favor = (posiciones > 0).sum()
-        n_contra = (posiciones < 0).sum()
-        n_neutro = (posiciones == 0).sum()
+        n_favor = int((posiciones > 0).sum())
+        n_contra = int((posiciones < 0).sum())
+        n_neutro = int((posiciones == 0).sum())
         
-        intensidad_favor = np.where(posiciones > 0, posiciones, 0).sum()
-        intensidad_contra = np.abs(np.where(posiciones < 0, posiciones, 0).sum())
+        intensidad_favor = float(np.where(posiciones > 0, posiciones, 0).sum())
+        intensidad_contra = float(np.abs(np.where(posiciones < 0, posiciones, 0).sum()))
         
-        implicacion_total = np.abs(posiciones).sum()
+        implicacion_total = float(np.abs(posiciones).sum())
         
         resultados.append({
-            'Actor': actor,
+            'Actor': str(actor),
             'Obj_favor': n_favor,
             'Obj_neutro': n_neutro,
             'Obj_contra': n_contra,
@@ -399,8 +405,8 @@ def calcular_implicacion_actores(MAO):
 
 def calcular_ambivalencia(CAA, DAA):
     """Calcula índice de ambivalencia entre actores"""
-    C = CAA.values
-    D = DAA.values
+    C = CAA.values.copy()
+    D = DAA.values.copy()
     
     with np.errstate(divide='ignore', invalid='ignore'):
         amb = np.minimum(C, D) / (np.maximum(C, D) + 0.001)
@@ -804,9 +810,15 @@ def crear_red_actores(balance_df, CAA, DAA):
 
 def crear_grafico_radar_actores(balance_df, top_n=6):
     """Radar comparando actores principales"""
+    if 'Ii' not in balance_df.columns:
+        return go.Figure()
+    
     df = balance_df.nlargest(top_n, 'Ii').copy()
     
-    df['Ii_norm'] = df['Ii'] / df['Ii'].max()
+    if len(df) == 0:
+        return go.Figure()
+    
+    df['Ii_norm'] = df['Ii'] / (df['Ii'].max() + 0.001)
     df['Di_norm'] = df['Di'] / (df['Di'].max() + 0.001)
     df['Ri_norm'] = (df['Ri'] - df['Ri'].min()) / (df['Ri'].max() - df['Ri'].min() + 0.001)
     
@@ -851,7 +863,7 @@ def generar_informe_excel(datos, nombre_proyecto):
         }
         pd.DataFrame(resumen_data).to_excel(writer, sheet_name='Resumen', index=False)
         
-        if 'balance' in datos:
+        if 'balance' in datos and datos['balance'] is not None:
             datos['balance'].to_excel(writer, sheet_name='Balance_Actores', index=False)
         
         if 'MAA' in datos and datos['MAA'] is not None:
@@ -866,28 +878,28 @@ def generar_informe_excel(datos, nombre_proyecto):
         if 'MAO_3' in datos and datos['MAO_3'] is not None:
             datos['MAO_3'].to_excel(writer, sheet_name='3MAO')
         
-        if 'CAA' in datos:
+        if 'CAA' in datos and datos['CAA'] is not None:
             datos['CAA'].to_excel(writer, sheet_name='Convergencias_Simple')
         
-        if 'DAA' in datos:
+        if 'DAA' in datos and datos['DAA'] is not None:
             datos['DAA'].to_excel(writer, sheet_name='Divergencias_Simple')
         
-        if 'CAA_pond' in datos:
+        if 'CAA_pond' in datos and datos['CAA_pond'] is not None:
             datos['CAA_pond'].to_excel(writer, sheet_name='Convergencias_Ponderada')
         
-        if 'DAA_pond' in datos:
+        if 'DAA_pond' in datos and datos['DAA_pond'] is not None:
             datos['DAA_pond'].to_excel(writer, sheet_name='Divergencias_Ponderada')
         
-        if 'CAA' in datos and 'DAA' in datos:
+        if 'CAA' in datos and 'DAA' in datos and datos['CAA'] is not None:
             (datos['CAA'] - datos['DAA']).to_excel(writer, sheet_name='Balance_Alianzas_Simple')
         
-        if 'CAA_pond' in datos and 'DAA_pond' in datos:
+        if 'CAA_pond' in datos and 'DAA_pond' in datos and datos['CAA_pond'] is not None:
             (datos['CAA_pond'] - datos['DAA_pond']).to_excel(writer, sheet_name='Balance_Alianzas_Pond')
         
-        if 'balance_objetivos' in datos:
+        if 'balance_objetivos' in datos and datos['balance_objetivos'] is not None:
             datos['balance_objetivos'].to_excel(writer, sheet_name='Balance_Objetivos', index=False)
         
-        if 'implicacion_actores' in datos:
+        if 'implicacion_actores' in datos and datos['implicacion_actores'] is not None:
             datos['implicacion_actores'].to_excel(writer, sheet_name='Implicacion_Actores', index=False)
     
     buffer.seek(0)
@@ -901,9 +913,20 @@ st.markdown('<div class="main-header">🎭 MACTOR PRO</div>', unsafe_allow_html=
 st.markdown('<div class="sub-header">Método de Análisis de Actores - Michel Godet (LIPSOR)</div>', unsafe_allow_html=True)
 
 # Inicializar session state
-for key in ['mactor_data', 'mactor_resultados', 'modo_entrada', 'actores_manual', 'objetivos_manual', 'MAA_manual', 'MAO_manual']:
-    if key not in st.session_state:
-        st.session_state[key] = None
+if 'mactor_data' not in st.session_state:
+    st.session_state.mactor_data = None
+if 'mactor_resultados' not in st.session_state:
+    st.session_state.mactor_resultados = {}
+if 'modo_entrada' not in st.session_state:
+    st.session_state.modo_entrada = None
+if 'actores_manual' not in st.session_state:
+    st.session_state.actores_manual = None
+if 'objetivos_manual' not in st.session_state:
+    st.session_state.objetivos_manual = None
+if 'MAA_manual' not in st.session_state:
+    st.session_state.MAA_manual = None
+if 'MAO_manual' not in st.session_state:
+    st.session_state.MAO_manual = None
 
 # Sidebar
 with st.sidebar:
@@ -1093,11 +1116,13 @@ with tab1:
             
             # Guardar datos procesados
             if st.button("✅ Confirmar datos y procesar", type="primary"):
-                np.fill_diagonal(edited_MAA.values, 0)
+                maa_values = edited_MAA.values.copy()
+                np.fill_diagonal(maa_values, 0)
+                maa_df = pd.DataFrame(maa_values, index=actores_editados, columns=actores_editados)
                 
                 st.session_state.mactor_data = {
-                    'MAA': edited_MAA,
-                    'MAO_2': edited_MAO,
+                    'MAA': maa_df,
+                    'MAO_2': edited_MAO.copy(),
                     'actores': actores_editados,
                     'objetivos': objetivos_editados,
                     'mensajes': ['✅ Datos manuales procesados correctamente'],
@@ -1125,15 +1150,11 @@ with tab2:
         balance['Clasificación'] = clasificacion
         
         # Guardar resultados
-        if st.session_state.mactor_resultados is None:
-            st.session_state.mactor_resultados = {}
-        st.session_state.mactor_resultados.update({
-            'MIDI': MIDI,
-            'balance': balance,
-            'med_Ii': med_Ii,
-            'med_Di': med_Di,
-            'k': k_midi
-        })
+        st.session_state.mactor_resultados['MIDI'] = MIDI
+        st.session_state.mactor_resultados['balance'] = balance
+        st.session_state.mactor_resultados['med_Ii'] = med_Ii
+        st.session_state.mactor_resultados['med_Di'] = med_Di
+        st.session_state.mactor_resultados['k'] = k_midi
         
         # Métricas
         st.subheader("📈 Distribución de Actores")
@@ -1203,8 +1224,6 @@ with tab3:
         impl_actores = calcular_implicacion_actores(MAO_2)
         
         # Guardar
-        if st.session_state.mactor_resultados is None:
-            st.session_state.mactor_resultados = {}
         st.session_state.mactor_resultados['balance_objetivos'] = balance_obj
         st.session_state.mactor_resultados['implicacion_actores'] = impl_actores
         
@@ -1214,17 +1233,22 @@ with tab3:
             if MAO_3 is not None:
                 st.session_state.mactor_resultados['MAO_3'] = MAO_3
         
-        # Métricas
+        # Métricas - con verificación de columnas
         st.subheader("📈 Resumen de Objetivos")
         col1, col2, col3 = st.columns(3)
         
-        idx_max = balance_obj['Balance_ponderado'].idxmax()
-        idx_min = balance_obj['Balance_ponderado'].idxmin()
-        idx_movil = balance_obj['Movilizacion'].idxmax()
-        
-        col1.metric("✅ Más viable", balance_obj.loc[idx_max, 'Objetivo'])
-        col2.metric("❌ Más bloqueado", balance_obj.loc[idx_min, 'Objetivo'])
-        col3.metric("⚡ Más movilizador", balance_obj.loc[idx_movil, 'Objetivo'])
+        if 'Balance_ponderado' in balance_obj.columns and len(balance_obj) > 0:
+            idx_max = balance_obj['Balance_ponderado'].idxmax()
+            idx_min = balance_obj['Balance_ponderado'].idxmin()
+            idx_movil = balance_obj['Movilizacion'].idxmax()
+            
+            col1.metric("✅ Más viable", str(balance_obj.loc[idx_max, 'Objetivo']))
+            col2.metric("❌ Más bloqueado", str(balance_obj.loc[idx_min, 'Objetivo']))
+            col3.metric("⚡ Más movilizador", str(balance_obj.loc[idx_movil, 'Objetivo']))
+        else:
+            col1.metric("✅ Más viable", "N/A")
+            col2.metric("❌ Más bloqueado", "N/A")
+            col3.metric("⚡ Más movilizador", "N/A")
         
         # Balance ponderado por objetivo
         st.subheader("📊 Balance Neto Ponderado por Objetivo")
@@ -1341,7 +1365,7 @@ with tab5:
     data = st.session_state.mactor_data
     resultados = st.session_state.mactor_resultados
     
-    if data is not None and resultados is not None:
+    if data is not None and resultados:
         
         # Red de actores
         if 'balance' in resultados and 'CAA' in resultados:
@@ -1405,14 +1429,14 @@ with tab6:
     data = st.session_state.mactor_data
     resultados = st.session_state.mactor_resultados
     
-    if data is not None and resultados is not None:
+    if data is not None and resultados:
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("👥 Actores Clave")
             
-            if 'balance' in resultados:
+            if 'balance' in resultados and 'Ri_neto' in resultados['balance'].columns:
                 balance = resultados['balance']
                 
                 st.markdown("**🔴 Top 3 Dominantes:**")
@@ -1424,14 +1448,15 @@ with tab6:
                     st.markdown(f"- **{row['Actor']}**: Balance=**{row['Ri_neto']:.0f}**")
                 
                 st.markdown("**🟣 Actores Enlace:**")
-                enlace = balance[balance['Clasificación'] == 'Enlace']
-                for _, row in enlace.iterrows():
-                    st.markdown(f"- **{row['Actor']}**")
+                if 'Clasificación' in balance.columns:
+                    enlace = balance[balance['Clasificación'] == 'Enlace']
+                    for _, row in enlace.iterrows():
+                        st.markdown(f"- **{row['Actor']}**")
         
         with col2:
             st.subheader("🎯 Objetivos Clave")
             
-            if 'balance_objetivos' in resultados:
+            if 'balance_objetivos' in resultados and 'Viabilidad' in resultados['balance_objetivos'].columns:
                 bal_obj = resultados['balance_objetivos']
                 
                 st.markdown("**✅ Objetivos más viables:**")
@@ -1473,7 +1498,7 @@ with tab7:
     data = st.session_state.mactor_data
     resultados = st.session_state.mactor_resultados
     
-    if data is not None and resultados is not None:
+    if data is not None and resultados:
         nombre_proyecto = st.text_input("Nombre del proyecto", value="Analisis_MACTOR")
         
         datos_export = {
@@ -1512,16 +1537,16 @@ with tab7:
             st.subheader("📋 Exportaciones CSV")
             
             if 'balance' in resultados:
-                st.download_button("📥 Balance Actores", resultados['balance'].to_csv(index=False), "balance_actores.csv", "text/csv")
+                st.download_button("📥 Balance Actores", resultados['balance'].to_csv(index=False), "balance_actores.csv", "text/csv", key="csv_bal")
             
             if 'CAA_pond' in resultados:
-                st.download_button("📥 Convergencias Pond.", resultados['CAA_pond'].to_csv(), "convergencias_pond.csv", "text/csv")
+                st.download_button("📥 Convergencias Pond.", resultados['CAA_pond'].to_csv(), "convergencias_pond.csv", "text/csv", key="csv_caa")
             
             if 'DAA_pond' in resultados:
-                st.download_button("📥 Divergencias Pond.", resultados['DAA_pond'].to_csv(), "divergencias_pond.csv", "text/csv")
+                st.download_button("📥 Divergencias Pond.", resultados['DAA_pond'].to_csv(), "divergencias_pond.csv", "text/csv", key="csv_daa")
             
             if 'balance_objetivos' in resultados:
-                st.download_button("📥 Balance Objetivos", resultados['balance_objetivos'].to_csv(index=False), "balance_objetivos.csv", "text/csv")
+                st.download_button("📥 Balance Objetivos", resultados['balance_objetivos'].to_csv(index=False), "balance_objetivos.csv", "text/csv", key="csv_obj")
     
     else:
         st.warning("⚠️ Primero carga y procesa los datos")

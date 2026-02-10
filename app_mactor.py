@@ -94,44 +94,63 @@ def procesar_archivo_mactor(uploaded_file):
         for hoja in hojas:
             if '2MAO' in hoja.upper() and 'JUST' not in hoja.upper():
                 df = pd.read_excel(xl, sheet_name=hoja, header=None)
-                fila_headers = 0
+                
+                # Buscar fila de headers (donde están O1, O2, etc.)
+                fila_headers = None
                 for i in range(min(10, len(df))):
-                    val = str(df.iloc[i, 0]).lower() if pd.notna(df.iloc[i, 0]) else ""
-                    if 'actor' in val or '\\' in val:
+                    # Verificar si la fila tiene O1, O2, etc. como headers
+                    row_vals = [str(v).strip().upper() if pd.notna(v) else '' for v in df.iloc[i, :10]]
+                    if 'O1' in row_vals or 'O2' in row_vals:
+                        fila_headers = i
+                        break
+                    # También buscar "Actor" al inicio de la celda (no en medio de un título)
+                    val0 = str(df.iloc[i, 0]).strip() if pd.notna(df.iloc[i, 0]) else ""
+                    if val0.lower().startswith('actor') or '\\' in val0:
                         fila_headers = i
                         break
                 
+                if fila_headers is None:
+                    fila_headers = 3  # Default para tu archivo
+                
+                # Extraer objetivos
                 objetivos = []
                 for j in range(1, min(40, len(df.columns))):
                     val = df.iloc[fila_headers, j]
                     if pd.notna(val):
-                        obj_str = str(val).strip()
-                        if obj_str.upper().startswith('O'):
-                            objetivos.append(obj_str.upper())
+                        obj_str = str(val).strip().upper()
+                        # Debe ser O seguido de número (O1, O2, ... O30)
+                        if obj_str.startswith('O') and len(obj_str) <= 3:
+                            try:
+                                int(obj_str[1:])  # Verificar que después de O hay un número
+                                objetivos.append(obj_str)
+                            except:
+                                pass
                 
+                # Extraer actores y datos
                 actores_mao, filas_datos = [], []
                 for i in range(fila_headers + 1, min(fila_headers + 26, len(df))):
                     nombre = df.iloc[i, 0]
                     if pd.isna(nombre): continue
                     nombre_str = str(nombre).strip()
-                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'moviliz']):
+                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'moviliz', 'σ']):
                         actores_mao.append(nombre_str)
                         filas_datos.append(i)
                 
                 n_actores, n_objetivos = len(actores_mao), len(objetivos)
-                matriz = np.zeros((n_actores, n_objetivos))
-                for i, fila_idx in enumerate(filas_datos):
-                    for j in range(n_objetivos):
-                        val = df.iloc[fila_idx, j + 1]
-                        if pd.notna(val):
-                            try: matriz[i, j] = float(val)
-                            except: pass
-                
-                resultado['MAO_2'] = pd.DataFrame(matriz, index=actores_mao, columns=objetivos)
-                resultado['objetivos'] = objetivos
-                if resultado['actores'] is None:
-                    resultado['actores'] = actores_mao
-                resultado['mensajes'].append(f"✅ 2MAO {n_actores}×{n_objetivos} procesada")
+                if n_objetivos > 0 and n_actores > 0:
+                    matriz = np.zeros((n_actores, n_objetivos))
+                    for i, fila_idx in enumerate(filas_datos):
+                        for j in range(n_objetivos):
+                            val = df.iloc[fila_idx, j + 1]
+                            if pd.notna(val):
+                                try: matriz[i, j] = float(val)
+                                except: pass
+                    
+                    resultado['MAO_2'] = pd.DataFrame(matriz, index=actores_mao, columns=objetivos)
+                    resultado['objetivos'] = objetivos
+                    if resultado['actores'] is None:
+                        resultado['actores'] = actores_mao
+                    resultado['mensajes'].append(f"✅ 2MAO {n_actores}×{n_objetivos} procesada")
                 break
         
         return resultado

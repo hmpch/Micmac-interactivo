@@ -313,7 +313,7 @@ def calcular_ambivalencia(CAA, DAA):
 
 def mostrar_grafico_con_descargas(fig, nombre, key):
     """Muestra gráfico con opciones de descarga"""
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=f"chart_{key}")
     col1, col2 = st.columns(2)
     with col1:
         html = fig.to_html(include_plotlyjs='cdn', full_html=True)
@@ -689,9 +689,9 @@ with tab2:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(crear_heatmap_matriz(MAA, "MAA", 'Blues', mostrar_valores), use_container_width=True)
+            st.plotly_chart(crear_heatmap_matriz(MAA, "MAA", 'Blues', mostrar_valores), use_container_width=True, key="hm_maa")
         with col2:
-            st.plotly_chart(crear_heatmap_matriz(MIDI, f"MIDI (k={k_midi})", 'Purples', mostrar_valores), use_container_width=True)
+            st.plotly_chart(crear_heatmap_matriz(MIDI, f"MIDI (k={k_midi})", 'Purples', mostrar_valores), use_container_width=True, key="hm_midi")
     else:
         st.warning("⚠️ Carga datos en la pestaña 'Datos'")
 
@@ -801,9 +801,9 @@ with tab4:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(crear_heatmap_matriz(CAA_pond, "Convergencias Pond.", 'Greens', mostrar_valores), use_container_width=True)
+            st.plotly_chart(crear_heatmap_matriz(CAA_pond, "Convergencias Pond.", 'Greens', mostrar_valores), use_container_width=True, key="hm_caa")
         with col2:
-            st.plotly_chart(crear_heatmap_matriz(DAA_pond, "Divergencias Pond.", 'Reds', mostrar_valores), use_container_width=True)
+            st.plotly_chart(crear_heatmap_matriz(DAA_pond, "Divergencias Pond.", 'Reds', mostrar_valores), use_container_width=True, key="hm_daa")
         
         st.subheader("Ambivalencia")
         mostrar_grafico_con_descargas(crear_heatmap_matriz(calcular_ambivalencia(CAA, DAA), "Ambivalencia", 'YlOrRd', mostrar_valores), "ambiv", "t4_5")

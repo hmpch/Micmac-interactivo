@@ -2,9 +2,9 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting / Martín PRATTO
+Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
-Versión: 5.2 - Descarga gráficos mejorada (SVG + botón cámara)
+Versión: 5.3 - Generación inteligente de códigos cortos
 """
 
 import streamlit as st
@@ -57,27 +57,166 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# CONFIGURACIÓN PLOTLY PARA DESCARGA
+# FUNCIONES DE GENERACIÓN DE CÓDIGOS INTELIGENTES
 # ============================================================
 
-# Configuración para que cada gráfico tenga botón de descarga
-PLOTLY_CONFIG = {
-    'toImageButtonOptions': {
-        'format': 'png',
-        'filename': 'grafico_micmac',
-        'height': 800,
-        'width': 1200,
-        'scale': 2
-    },
-    'displaylogo': False,
-    'modeBarButtonsToAdd': ['downloadSVG'],
-    'displayModeBar': True
+# Palabras a ignorar al generar abreviaturas (stopwords en español e inglés)
+STOPWORDS = {
+    'de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'a', 'con', 'por', 'para',
+    'un', 'una', 'unos', 'unas', 'al', 'su', 'sus', 'que', 'se', 'es', 'son',
+    'the', 'of', 'and', 'in', 'to', 'for', 'a', 'an', 'on', 'at', 'by', 'with',
+    'from', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being'
 }
+
+def tiene_codigo_explicito(nombre):
+    """
+    Detecta si el nombre ya tiene un código explícito al inicio.
+    Ejemplos: P1, E2, TENS_GEO, V12, EC1, etc.
+    """
+    if pd.isna(nombre):
+        return False, None
+    
+    nombre = str(nombre).strip()
+    
+    # Patrón 1: Letra(s) + número al inicio (P1, E2, EC1, V12)
+    match = re.match(r'^([A-Za-z]+\d+)\s', nombre)
+    if match:
+        return True, match.group(1).upper()
+    
+    # Patrón 2: Código tipo TENS_GEO (mayúsculas con guiones bajos, corto)
+    match = re.match(r'^([A-Z][A-Z0-9_]{1,12})$', nombre)
+    if match:
+        return True, match.group(1)
+    
+    # Patrón 3: Código corto al inicio seguido de espacio y descripción
+    match = re.match(r'^([A-Z][A-Z0-9_]{1,12})\s', nombre)
+    if match and len(match.group(1)) <= 12:
+        return True, match.group(1)
+    
+    return False, None
+
+def generar_abreviatura_inteligente(nombre, max_chars=10):
+    """
+    Genera una abreviatura inteligente a partir de un nombre largo.
+    
+    Estrategia:
+    1. Elimina stopwords
+    2. Toma las primeras letras de cada palabra significativa
+    3. Limita al máximo de caracteres
+    
+    Ejemplos:
+    - "Relación comercial Marruecos Ceuta" → "RELCOMMARC"
+    - "Inversión marroquí en infraestructuras civiles" → "INVMARINFC"
+    - "Programa de Asociación y Cooperación Individual" → "PROGASOCCO"
+    """
+    if pd.isna(nombre):
+        return "VAR"
+    
+    nombre = str(nombre).strip()
+    
+    # Remover caracteres especiales y números al inicio si no son código
+    nombre_limpio = re.sub(r'^[^a-zA-Z]+', '', nombre)
+    
+    # Dividir en palabras
+    palabras = re.findall(r'[A-Za-záéíóúñÁÉÍÓÚÑ]+', nombre_limpio)
+    
+    # Filtrar stopwords
+    palabras_significativas = [p for p in palabras if p.lower() not in STOPWORDS]
+    
+    # Si no quedan palabras significativas, usar las originales
+    if not palabras_significativas:
+        palabras_significativas = palabras
+    
+    if not palabras_significativas:
+        return "VAR"
+    
+    # Estrategia de abreviación según cantidad de palabras
+    n_palabras = len(palabras_significativas)
+    
+    if n_palabras == 1:
+        # Una sola palabra: tomar los primeros max_chars caracteres
+        return palabras_significativas[0][:max_chars].upper()
+    
+    elif n_palabras == 2:
+        # Dos palabras: dividir caracteres entre ambas
+        chars_cada = max_chars // 2
+        abrev = palabras_significativas[0][:chars_cada] + palabras_significativas[1][:chars_cada]
+        return abrev.upper()[:max_chars]
+    
+    else:
+        # Tres o más palabras: distribuir caracteres
+        if n_palabras <= 4:
+            chars_cada = max(2, max_chars // n_palabras)
+        else:
+            chars_cada = max(1, max_chars // min(n_palabras, 5))
+        
+        abrev = ''.join([p[:chars_cada] for p in palabras_significativas[:5]])
+        return abrev.upper()[:max_chars]
+
+def extraer_codigo(nombre_variable, max_chars=10):
+    """
+    Extrae o genera un código corto para una variable.
+    
+    1. Si tiene código explícito (P1, TENS_GEO, etc.) → usar ese
+    2. Si no → generar abreviatura inteligente
+    """
+    if pd.isna(nombre_variable):
+        return "VAR"
+    
+    nombre = str(nombre_variable).strip()
+    
+    # Verificar si ya tiene código explícito
+    tiene_codigo, codigo = tiene_codigo_explicito(nombre)
+    if tiene_codigo:
+        return codigo[:max_chars]
+    
+    # Generar abreviatura inteligente
+    return generar_abreviatura_inteligente(nombre, max_chars)
+
+def generar_codigos_y_mapeo(nombres_variables, max_chars=10):
+    """
+    Genera códigos únicos para cada variable con longitud máxima configurable.
+    Garantiza que no haya duplicados.
+    """
+    codigos = []
+    mapeo = {}
+    codigos_usados = {}  # Diccionario para contar usos
+    
+    for i, nombre in enumerate(nombres_variables):
+        codigo_base = extraer_codigo(nombre, max_chars)
+        
+        # Si el código ya existe, agregar sufijo numérico
+        if codigo_base in codigos_usados:
+            codigos_usados[codigo_base] += 1
+            # Calcular cuántos caracteres podemos usar para el sufijo
+            sufijo = str(codigos_usados[codigo_base])
+            max_base = max_chars - len(sufijo)
+            codigo = codigo_base[:max_base] + sufijo
+        else:
+            codigos_usados[codigo_base] = 0
+            codigo = codigo_base
+        
+        codigos.append(codigo)
+        mapeo[codigo] = nombre
+    
+    return codigos, mapeo
+
+def truncar_texto(texto, max_chars=30):
+    """Trunca texto largo agregando '...' si excede el máximo"""
+    if pd.isna(texto):
+        return ""
+    texto = str(texto)
+    if len(texto) <= max_chars:
+        return texto
+    return texto[:max_chars-3] + "..."
+
+# ============================================================
+# FUNCIONES DE VISUALIZACIÓN
+# ============================================================
 
 def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
     """Muestra un gráfico Plotly con opciones de descarga"""
     
-    # Configuración personalizada para este gráfico
     config = {
         'toImageButtonOptions': {
             'format': 'png',
@@ -91,14 +230,11 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
         'modeBarButtonsToRemove': ['lasso2d', 'select2d']
     }
     
-    # Mostrar el gráfico con la barra de herramientas visible
     st.plotly_chart(fig, use_container_width=True, config=config)
     
-    # Botones de descarga adicionales
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Descargar como HTML interactivo
         html_buffer = BytesIO()
         html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
         html_buffer.write(html_content.encode())
@@ -113,7 +249,6 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
         )
     
     with col2:
-        # Descargar como SVG (no requiere kaleido)
         try:
             svg_str = fig.to_image(format="svg").decode('utf-8')
             st.download_button(
@@ -124,11 +259,9 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
                 key=f"svg_{nombre_base}_{key_suffix}"
             )
         except Exception:
-            # Si SVG falla, mostrar instrucción alternativa
             st.info("📷 Usa el ícono de cámara en el gráfico")
     
     with col3:
-        # Intentar PNG con kaleido
         try:
             img_bytes = fig.to_image(format="png", width=1200, height=800, scale=2)
             st.download_button(
@@ -140,58 +273,6 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
             )
         except Exception:
             st.markdown("📷 **PNG:** Clic en 📷 del gráfico")
-    
-    # Tip de descarga
-    st.markdown("""
-    <div class="download-tip">
-    💡 <b>Tip:</b> También puedes usar el ícono 📷 en la esquina superior derecha del gráfico para guardar como PNG
-    </div>
-    """, unsafe_allow_html=True)
-
-# ============================================================
-# FUNCIONES DE EXTRACCIÓN DE CÓDIGOS
-# ============================================================
-
-def extraer_codigo(nombre_variable):
-    """Extrae el código corto de una variable"""
-    if pd.isna(nombre_variable):
-        return "VAR"
-    
-    nombre = str(nombre_variable).strip()
-    
-    if re.match(r'^[A-Za-z_]+[A-Za-z0-9_]*$', nombre) and len(nombre) < 15:
-        return nombre.upper()
-    
-    match = re.match(r'^([A-Za-z]+\d+)', nombre)
-    if match:
-        return match.group(1).upper()
-    
-    match = re.match(r'^(V\d+)', nombre, re.IGNORECASE)
-    if match:
-        return match.group(1).upper()
-    
-    return nombre[:8].upper() if len(nombre) >= 8 else nombre.upper()
-
-def generar_codigos_y_mapeo(nombres_variables):
-    """Genera códigos únicos para cada variable"""
-    codigos = []
-    mapeo = {}
-    codigos_usados = set()
-    
-    for i, nombre in enumerate(nombres_variables):
-        codigo = extraer_codigo(nombre)
-        
-        codigo_original = codigo
-        contador = 1
-        while codigo in codigos_usados:
-            codigo = f"{codigo_original}_{contador}"
-            contador += 1
-        
-        codigos_usados.add(codigo)
-        codigos.append(codigo)
-        mapeo[codigo] = nombre
-    
-    return codigos, mapeo
 
 # ============================================================
 # FUNCIONES DE CÁLCULO MICMAC
@@ -420,23 +501,20 @@ def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
         return None, None, None, f"Error: {str(e)}"
 
 # ============================================================
-# GENERACIÓN DE GRÁFICOS ADICIONALES
+# GENERACIÓN DE GRÁFICOS
 # ============================================================
 
 def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=True):
-    """Crea un gráfico de red de influencias fuertes usando Plotly (sin networkx)"""
+    """Crea un gráfico de red de influencias fuertes"""
     etiquetas = codigos if usar_codigos else nombres
     n = len(etiquetas)
     
-    # Crear posiciones en círculo
     angles = np.linspace(0, 2*np.pi, n, endpoint=False)
     pos_x = np.cos(angles)
     pos_y = np.sin(angles)
     
-    # Crear traces para aristas
     edge_x = []
     edge_y = []
-    edge_colors = []
     
     for i in range(n):
         for j in range(n):
@@ -452,12 +530,12 @@ def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=Tr
         name='Influencias'
     )
     
-    # Calcular tamaño de nodos por influencia recibida
     influencia_recibida = M.sum(axis=0)
-    node_sizes = 15 + (influencia_recibida / influencia_recibida.max()) * 30
-    
-    # Colores por motricidad
+    node_sizes = 15 + (influencia_recibida / max(influencia_recibida.max(), 1)) * 30
     motricidad = M.sum(axis=1)
+    
+    # Hover muestra nombre completo
+    hover_text = [f"<b>{codigos[i]}</b><br>{nombres[i]}<br>Influencia recibida: {influencia_recibida[i]:.0f}" for i in range(n)]
     
     node_trace = go.Scatter(
         x=pos_x, y=pos_y,
@@ -465,7 +543,7 @@ def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=Tr
         hoverinfo='text',
         text=etiquetas,
         textposition='top center',
-        hovertext=[f"{etiquetas[i]}<br>Influencia recibida: {influencia_recibida[i]:.0f}" for i in range(n)],
+        hovertext=hover_text,
         marker=dict(
             size=node_sizes,
             color=motricidad,
@@ -507,7 +585,6 @@ def crear_grafico_estabilidad(M, nombres, codigos, alpha=0.5, usar_codigos=True)
     
     df = pd.DataFrame(data)
     
-    # Top 10 variables
     top_vars = df[df['K'] == 5].nlargest(10, 'Motricidad')['Variable'].tolist()
     df_top = df[df['Variable'].isin(top_vars)]
     
@@ -554,7 +631,8 @@ def crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos
             if i != j and M[i, j] > 0:
                 relaciones.append({
                     'Par': f"{etiquetas[i]} → {etiquetas[j]}",
-                    'Intensidad': M[i, j]
+                    'Intensidad': M[i, j],
+                    'Detalle': f"{nombres[i]} → {nombres[j]}"
                 })
     
     df = pd.DataFrame(relaciones).nlargest(top_n, 'Intensidad')
@@ -562,7 +640,8 @@ def crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos
     fig = px.bar(df, x='Intensidad', y='Par', orientation='h',
         title=f'Top {top_n} Relaciones de Influencia Más Fuertes',
         color='Intensidad',
-        color_continuous_scale='Reds')
+        color_continuous_scale='Reds',
+        hover_data=['Detalle'])
     
     fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
     
@@ -577,6 +656,7 @@ def crear_grafico_inestabilidad(df_resultados):
     fig = px.bar(df, x='Código', y='Inestabilidad',
         title='Índice de Inestabilidad (Variables que amplifican cambios)',
         color='Clasificación',
+        hover_data=['Variable'],
         color_discrete_map={
             'Determinantes': '#FF4444',
             'Clave': '#1166CC',
@@ -598,14 +678,18 @@ def crear_grafico_comparativo_barras(df_resultados, top_n=15):
         name='Motricidad',
         x=df['Código'],
         y=df['Motricidad'],
-        marker_color='#FF6B6B'
+        marker_color='#FF6B6B',
+        hovertext=df['Variable'],
+        hovertemplate='<b>%{hovertext}</b><br>Motricidad: %{y:.1f}<extra></extra>'
     ))
     
     fig.add_trace(go.Bar(
         name='Dependencia',
         x=df['Código'],
         y=df['Dependencia'],
-        marker_color='#4ECDC4'
+        marker_color='#4ECDC4',
+        hovertext=df['Variable'],
+        hovertemplate='<b>%{hovertext}</b><br>Dependencia: %{y:.1f}<extra></extra>'
     ))
     
     fig.update_layout(
@@ -627,26 +711,16 @@ def generar_informe_excel(res, nombres, codigos, M, nombre_proyecto):
     buffer = BytesIO()
     
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # 1. Resumen Ejecutivo
         resumen = pd.DataFrame({
             'Parámetro': [
-                'Fecha de análisis',
-                'Nombre del proyecto',
-                'Total de variables',
-                'Alpha (α)',
-                'K (profundidad)',
-                'Variables Determinantes',
-                'Variables Clave',
-                'Variables Resultado',
-                'Variables Autónomas',
+                'Fecha de análisis', 'Nombre del proyecto', 'Total de variables',
+                'Alpha (α)', 'K (profundidad)', 'Variables Determinantes',
+                'Variables Clave', 'Variables Resultado', 'Variables Autónomas',
                 'Densidad de la matriz (%)'
             ],
             'Valor': [
-                datetime.now().strftime('%Y-%m-%d %H:%M'),
-                nombre_proyecto,
-                len(nombres),
-                res['alpha'],
-                res['K'],
+                datetime.now().strftime('%Y-%m-%d %H:%M'), nombre_proyecto, len(nombres),
+                res['alpha'], res['K'],
                 sum(c == 'Determinantes' for c in res['clasificacion']),
                 sum(c == 'Clave' for c in res['clasificacion']),
                 sum(c == 'Variables resultado' for c in res['clasificacion']),
@@ -656,30 +730,23 @@ def generar_informe_excel(res, nombres, codigos, M, nombre_proyecto):
         })
         resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
         
-        # 2. Ranking completo
         res['df_resultados'].to_excel(writer, sheet_name='Ranking Variables', index=False)
         
-        # 3. Variables por cuadrante
         for cuadrante in ['Determinantes', 'Clave', 'Variables resultado', 'Autónomas']:
             df_cuad = res['df_resultados'][res['df_resultados']['Clasificación'] == cuadrante]
             if len(df_cuad) > 0:
                 df_cuad.to_excel(writer, sheet_name=cuadrante[:30], index=False)
         
-        # 4. Matriz MIDI
         pd.DataFrame(res['MIDI'], index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MIDI')
         
-        # 5. Relaciones fuertes
         relaciones = identificar_relaciones_fuertes(M, codigos, umbral=2)
         if relaciones:
             pd.DataFrame(relaciones).to_excel(writer, sheet_name='Relaciones Fuertes', index=False)
         
-        # 6. Tabla de códigos
         pd.DataFrame({'Código': codigos, 'Variable': nombres}).to_excel(writer, sheet_name='Diccionario', index=False)
         
-        # 7. Matriz original
         pd.DataFrame(M, index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MID Original')
         
-        # 8. Análisis estratégico
         df_estrategico = res['df_resultados'].copy()
         df_estrategico['Valor_Estratégico'] = df_estrategico['Motricidad'] + df_estrategico['Dependencia']
         df_estrategico['Índice_Inestabilidad'] = df_estrategico['Motricidad'] * df_estrategico['Dependencia']
@@ -748,7 +815,18 @@ with st.sidebar:
     
     st.subheader("3. Visualización")
     mostrar_etiquetas = st.checkbox("Mostrar etiquetas", value=True)
-    usar_codigos = st.checkbox("Usar códigos cortos", value=True)
+    usar_codigos = st.checkbox("Usar códigos cortos", value=True,
+        help="Genera automáticamente códigos cortos para nombres largos")
+    
+    # Nueva opción: longitud máxima de códigos
+    max_chars_codigo = st.slider(
+        "Longitud máx. códigos",
+        min_value=4,
+        max_value=15,
+        value=10,
+        help="Máximo de caracteres para los códigos de variables"
+    )
+    
     tamaño_fuente = st.slider("Tamaño fuente", min_value=8, max_value=16, value=10)
 
 # Pestañas principales
@@ -774,7 +852,8 @@ with tab1:
         if df_procesado is not None:
             st.success(mensaje)
             
-            codigos, mapeo = generar_codigos_y_mapeo(nombres)
+            # Generar códigos con longitud configurable
+            codigos, mapeo = generar_codigos_y_mapeo(nombres, max_chars=max_chars_codigo)
             
             st.session_state.matriz_procesada = df_procesado
             st.session_state.nombres_variables = nombres
@@ -790,8 +869,22 @@ with tab1:
             densidad = (M_temp != 0).sum() / M_temp.size * 100
             col3.metric("Densidad", f"{densidad:.1f}%")
             
-            st.subheader("🏷️ Tabla de Variables")
-            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True, height=300)
+            st.subheader("🏷️ Tabla de Variables y Códigos")
+            st.markdown("""
+            <div class="info-box">
+            Los códigos se generan automáticamente:
+            <ul>
+            <li><b>Si la variable tiene código explícito</b> (P1, TENS_GEO, etc.) → se usa ese código</li>
+            <li><b>Si el nombre es largo</b> → se genera abreviatura inteligente</li>
+            </ul>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            df_codigos = pd.DataFrame({
+                'Código': codigos,
+                'Variable (nombre completo)': nombres
+            })
+            st.dataframe(df_codigos, use_container_width=True, height=300)
             
             st.subheader("📊 Vista previa de la matriz")
             st.dataframe(df_procesado, use_container_width=True, height=400)
@@ -799,6 +892,13 @@ with tab1:
             st.error(f"❌ {mensaje}")
     else:
         st.info("👆 Sube un archivo Excel con tu matriz de influencias")
+        st.markdown("""
+        **El sistema genera automáticamente códigos cortos:**
+        - `P1 Marruecos - Rusia` → `P1`
+        - `TENS_GEO` → `TENS_GEO`
+        - `Relación comercial Marruecos Ceuta` → `RELCOMMAR`
+        - `Inversión marroquí en infraestructuras` → `INVMARINF`
+        """)
 
 # ============================================================
 # TAB 2: ANÁLISIS MICMAC
@@ -848,7 +948,6 @@ with tab2:
             'K': K_usado
         }
         
-        # Métricas
         st.subheader("📈 Resumen")
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total", len(nombres))
@@ -856,7 +955,6 @@ with tab2:
         col3.metric("Clave", sum(c == 'Clave' for c in clasificacion))
         col4.metric("Resultado", sum(c == 'Variables resultado' for c in clasificacion))
         
-        # Tabla
         st.subheader("🏆 Ranking de Variables")
         
         def color_clasif(val):
@@ -873,11 +971,11 @@ with tab2:
             use_container_width=True, height=400
         )
         
-        # Heatmap MIDI
         st.subheader("🔢 Matriz MIDI")
-        etiquetas = codigos if usar_codigos else nombres
+        etiquetas = codigos if usar_codigos else [truncar_texto(n, 20) for n in nombres]
         fig_midi = go.Figure(data=go.Heatmap(
-            z=MIDI, x=etiquetas, y=etiquetas, colorscale='Blues'
+            z=MIDI, x=etiquetas, y=etiquetas, colorscale='Blues',
+            hovertemplate='%{x} → %{y}<br>Valor: %{z:.1f}<extra></extra>'
         ))
         fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
         mostrar_grafico_con_descargas(fig_midi, "matriz_midi", "tab2")
@@ -894,6 +992,8 @@ with tab3:
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
         df_res = res['df_resultados'].copy()
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
         
         st.markdown("""
         <div class="info-box">
@@ -918,6 +1018,7 @@ with tab3:
             df_temp = df_res[mask]
             if len(df_temp) > 0:
                 etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
+                # Hover siempre muestra nombre completo
                 hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_temp['Código'], df_temp['Variable'])]
                 
                 fig.add_trace(go.Scatter(
@@ -951,7 +1052,10 @@ with tab3:
         
         mostrar_grafico_con_descargas(fig, "subsistemas", "tab3")
         
-        # Distribución pie chart
+        # Tabla de referencia expandible
+        with st.expander("📋 Ver tabla de referencia de códigos", expanded=False):
+            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
+        
         st.subheader("📊 Distribución por Cuadrantes")
         fig_pie = crear_grafico_distribucion_cuadrantes(res['clasificacion'])
         mostrar_grafico_con_descargas(fig_pie, "distribucion_cuadrantes", "tab3_pie")
@@ -968,6 +1072,8 @@ with tab4:
     if st.session_state.resultados is not None:
         res = st.session_state.resultados
         df_res = res['df_resultados'].copy()
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
         
         st.markdown("""
         <div class="info-box">
@@ -1006,6 +1112,9 @@ with tab4:
         fig.update_layout(title="Eje Estratégico", height=600, xaxis_title="Dependencia", yaxis_title="Motricidad")
         mostrar_grafico_con_descargas(fig, "eje_estrategico", "tab4")
         
+        with st.expander("📋 Ver tabla de referencia de códigos", expanded=False):
+            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
+        
         st.subheader("🏆 Top 10 Variables Estratégicas")
         top10 = df_res.nlargest(10, 'Valor_Estrategico')[
             ['Código', 'Variable', 'Motricidad', 'Dependencia', 'Valor_Estrategico', 'Clasificación']
@@ -1027,7 +1136,6 @@ with tab5:
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
         
-        # 1. Red de Influencias
         st.subheader("🕸️ Red de Influencias Fuertes")
         umbral_red = st.slider("Umbral de intensidad", min_value=1, max_value=3, value=2, key="umbral_red")
         
@@ -1036,28 +1144,24 @@ with tab5:
         
         st.divider()
         
-        # 2. Comparativo Barras
         st.subheader("📊 Comparativo Motricidad vs Dependencia")
         fig_comp = crear_grafico_comparativo_barras(res['df_resultados'], top_n=15)
         mostrar_grafico_con_descargas(fig_comp, "comparativo_mot_dep", "tab5_comp")
         
         st.divider()
         
-        # 3. Estabilidad del Ranking
         st.subheader("📈 Estabilidad del Ranking según Profundidad K")
         fig_estab = crear_grafico_estabilidad(M, nombres, codigos, alpha=res['alpha'], usar_codigos=usar_codigos)
         mostrar_grafico_con_descargas(fig_estab, "estabilidad_ranking", "tab5_estab")
         
         st.divider()
         
-        # 4. Relaciones Fuertes
         st.subheader("💪 Top Relaciones de Influencia")
         fig_rel = crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos=usar_codigos)
         mostrar_grafico_con_descargas(fig_rel, "relaciones_fuertes", "tab5_rel")
         
         st.divider()
         
-        # 5. Índice de Inestabilidad
         st.subheader("⚠️ Índice de Inestabilidad")
         st.markdown("Variables con alto índice (Motricidad × Dependencia) son **amplificadores de cambios**.")
         fig_inest = crear_grafico_inestabilidad(res['df_resultados'])
@@ -1092,7 +1196,7 @@ with tab6:
             - Matriz MIDI
             - Relaciones fuertes
             - Análisis estratégico
-            - Diccionario de variables
+            - Diccionario de códigos
             """)
             
             buffer = generar_informe_excel(res, nombres, codigos, M, nombre_proyecto)
@@ -1157,17 +1261,12 @@ with tab7:
         
         st.subheader("💡 Cómo descargar gráficos como imagen")
         st.markdown("""
-        **Opción 1 - Botón de cámara (recomendado):**
+        **Opción 1 - Botón de cámara:**
         1. Pasa el mouse sobre cualquier gráfico
-        2. Aparecerá una barra de herramientas en la esquina superior derecha
-        3. Haz clic en el ícono de **📷 cámara** para descargar como PNG
+        2. Haz clic en el ícono de **📷 cámara** (esquina superior derecha)
         
         **Opción 2 - Botones de descarga:**
-        - Cada gráfico tiene botones para descargar en HTML (interactivo) o SVG (vector)
-        
-        **Opción 3 - Captura de pantalla:**
-        - Windows: `Win + Shift + S`
-        - Mac: `Cmd + Shift + 4`
+        - Cada gráfico tiene botones para HTML (interactivo) y SVG (vector)
         """)
         
     else:
@@ -1177,6 +1276,6 @@ with tab7:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.2</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | MARTIN PRATTO 2025
+<b>MICMAC PRO v5.3</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | Martin Pratto Chiarella-2025
 </div>
 """, unsafe_allow_html=True)

@@ -578,6 +578,268 @@ def generar_informe_excel(datos, nombre):
     buffer.seek(0)
     return buffer
 
+def generar_informe_pdf(datos, nombre_proyecto, figuras):
+    """Genera informe PDF completo con gráficos y análisis"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib.colors import HexColor
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
+    from reportlab.lib import colors
+    import tempfile
+    import os
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    
+    styles = getSampleStyleSheet()
+    
+    # Estilos personalizados
+    styles.add(ParagraphStyle(name='TituloInforme', parent=styles['Title'], fontSize=24, textColor=HexColor('#8B5CF6'), spaceAfter=30))
+    styles.add(ParagraphStyle(name='Subtitulo', parent=styles['Heading1'], fontSize=16, textColor=HexColor('#4C1D95'), spaceBefore=20, spaceAfter=10))
+    styles.add(ParagraphStyle(name='Seccion', parent=styles['Heading2'], fontSize=14, textColor=HexColor('#6D28D9'), spaceBefore=15, spaceAfter=8))
+    styles.add(ParagraphStyle(name='Cuerpo', parent=styles['Normal'], fontSize=10, spaceAfter=8, leading=14))
+    styles.add(ParagraphStyle(name='Destacado', parent=styles['Normal'], fontSize=10, textColor=HexColor('#DC2626'), spaceAfter=6))
+    
+    story = []
+    
+    # ============ PORTADA ============
+    story.append(Spacer(1, 3*cm))
+    story.append(Paragraph("INFORME MACTOR", styles['TituloInforme']))
+    story.append(Paragraph("Método de Análisis de Actores", styles['Subtitulo']))
+    story.append(Spacer(1, 1*cm))
+    story.append(Paragraph(f"<b>Proyecto:</b> {nombre_proyecto}", styles['Cuerpo']))
+    story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Cuerpo']))
+    story.append(Paragraph(f"<b>Actores analizados:</b> {len(datos.get('actores', []))}", styles['Cuerpo']))
+    story.append(Paragraph(f"<b>Objetivos estratégicos:</b> {len(datos.get('objetivos', []))}", styles['Cuerpo']))
+    story.append(Spacer(1, 2*cm))
+    story.append(Paragraph("Metodología Michel Godet (LIPSOR)", styles['Cuerpo']))
+    story.append(Paragraph("Generado por MACTOR PRO - JETLEX Strategic Consulting", styles['Cuerpo']))
+    story.append(PageBreak())
+    
+    # ============ ÍNDICE ============
+    story.append(Paragraph("ÍNDICE", styles['Subtitulo']))
+    story.append(Paragraph("1. Resumen Ejecutivo", styles['Cuerpo']))
+    story.append(Paragraph("2. Análisis de Actores (MIDI)", styles['Cuerpo']))
+    story.append(Paragraph("3. Análisis de Objetivos (MAO)", styles['Cuerpo']))
+    story.append(Paragraph("4. Convergencias y Divergencias", styles['Cuerpo']))
+    story.append(Paragraph("5. Síntesis Estratégica", styles['Cuerpo']))
+    story.append(Paragraph("6. Recomendaciones", styles['Cuerpo']))
+    story.append(PageBreak())
+    
+    # ============ 1. RESUMEN EJECUTIVO ============
+    story.append(Paragraph("1. RESUMEN EJECUTIVO", styles['Subtitulo']))
+    
+    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
+        bal = datos['balance']
+        n_dom = sum(bal.get('Clasificación', []) == 'Dominante') if 'Clasificación' in bal.columns else 0
+        n_enl = sum(bal.get('Clasificación', []) == 'Enlace') if 'Clasificación' in bal.columns else 0
+        n_domd = sum(bal.get('Clasificación', []) == 'Dominado') if 'Clasificación' in bal.columns else 0
+        n_aut = sum(bal.get('Clasificación', []) == 'Autónomo') if 'Clasificación' in bal.columns else 0
+        
+        story.append(Paragraph(f"El análisis MACTOR identifica <b>{len(datos.get('actores', []))} actores</b> en el sistema estratégico, distribuidos en:", styles['Cuerpo']))
+        story.append(Paragraph(f"• <b>{n_dom} actores dominantes</b> - Alta influencia, baja dependencia", styles['Cuerpo']))
+        story.append(Paragraph(f"• <b>{n_enl} actores de enlace</b> - Alta influencia y alta dependencia", styles['Cuerpo']))
+        story.append(Paragraph(f"• <b>{n_domd} actores dominados</b> - Baja influencia, alta dependencia", styles['Cuerpo']))
+        story.append(Paragraph(f"• <b>{n_aut} actores autónomos</b> - Baja influencia y dependencia", styles['Cuerpo']))
+        
+        if 'Ri_neto' in bal.columns:
+            top_dom = bal.nlargest(3, 'Ri_neto')
+            story.append(Spacer(1, 0.5*cm))
+            story.append(Paragraph("<b>Actores más influyentes:</b>", styles['Cuerpo']))
+            for _, r in top_dom.iterrows():
+                story.append(Paragraph(f"• {r['Actor']}: Balance de fuerza = +{r['Ri_neto']:.0f}", styles['Cuerpo']))
+    
+    if 'balance_objetivos' in datos and isinstance(datos['balance_objetivos'], pd.DataFrame):
+        bal_obj = datos['balance_objetivos']
+        if 'Viabilidad' in bal_obj.columns:
+            story.append(Spacer(1, 0.5*cm))
+            story.append(Paragraph("<b>Objetivos más viables:</b>", styles['Cuerpo']))
+            for _, r in bal_obj.nlargest(3, 'Viabilidad').iterrows():
+                story.append(Paragraph(f"• {r['Objetivo']}: Viabilidad = {r['Viabilidad']:+.2f}", styles['Cuerpo']))
+    
+    story.append(PageBreak())
+    
+    # ============ 2. ANÁLISIS DE ACTORES ============
+    story.append(Paragraph("2. ANÁLISIS DE ACTORES (MIDI)", styles['Subtitulo']))
+    
+    story.append(Paragraph("La Matriz de Influencias Directas e Indirectas (MIDI) permite identificar las relaciones de poder entre los actores del sistema.", styles['Cuerpo']))
+    
+    # Insertar gráfico de plano si existe
+    if 'plano_actores' in figuras:
+        story.append(Paragraph("<b>Plano de Influencias/Dependencias:</b>", styles['Seccion']))
+        story.append(Paragraph("Este plano clasifica a los actores según su influencia (Ii) y dependencia (Di). Los actores dominantes (cuadrante superior izquierdo) son los más importantes para el éxito de cualquier estrategia.", styles['Cuerpo']))
+        try:
+            img = Image(figuras['plano_actores'], width=16*cm, height=12*cm)
+            story.append(img)
+        except:
+            story.append(Paragraph("[Gráfico no disponible]", styles['Cuerpo']))
+        story.append(Spacer(1, 0.5*cm))
+    
+    # Insertar gráfico de balance si existe
+    if 'balance_actores' in figuras:
+        story.append(Paragraph("<b>Balance de Relaciones de Fuerza:</b>", styles['Seccion']))
+        story.append(Paragraph("El balance neto (Ri = Ii - Di) indica qué actores tienen más poder de influencia sobre el sistema. Valores positivos indican actores dominantes, negativos indican actores dominados.", styles['Cuerpo']))
+        try:
+            img = Image(figuras['balance_actores'], width=16*cm, height=10*cm)
+            story.append(img)
+        except:
+            pass
+        story.append(Spacer(1, 0.5*cm))
+    
+    # Tabla de clasificación
+    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
+        bal = datos['balance']
+        story.append(Paragraph("<b>Clasificación de Actores:</b>", styles['Seccion']))
+        
+        tabla_data = [['Actor', 'Influencia (Ii)', 'Dependencia (Di)', 'Balance', 'Clasificación']]
+        for _, r in bal.iterrows():
+            clasif = r.get('Clasificación', 'N/A')
+            tabla_data.append([r['Actor'], f"{r['Ii']:.0f}", f"{r['Di']:.0f}", f"{r['Ri_neto']:+.0f}", clasif])
+        
+        tabla = Table(tabla_data, colWidths=[4*cm, 3*cm, 3*cm, 2.5*cm, 3*cm])
+        tabla.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#8B5CF6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#F5F3FF')]),
+        ]))
+        story.append(tabla)
+    
+    story.append(PageBreak())
+    
+    # ============ 3. ANÁLISIS DE OBJETIVOS ============
+    story.append(Paragraph("3. ANÁLISIS DE OBJETIVOS (MAO)", styles['Subtitulo']))
+    
+    story.append(Paragraph("La matriz de posiciones Actor-Objetivo (2MAO) identifica qué actores apoyan, se oponen o son neutros respecto a cada objetivo estratégico.", styles['Cuerpo']))
+    
+    if 'balance_objetivos_fig' in figuras:
+        story.append(Paragraph("<b>Balance Ponderado por Objetivo:</b>", styles['Seccion']))
+        story.append(Paragraph("Este gráfico muestra la viabilidad de cada objetivo considerando el poder de los actores que lo apoyan vs los que se oponen.", styles['Cuerpo']))
+        try:
+            img = Image(figuras['balance_objetivos_fig'], width=16*cm, height=12*cm)
+            story.append(img)
+        except:
+            pass
+    
+    if 'viabilidad_fig' in figuras:
+        story.append(Paragraph("<b>Índice de Viabilidad:</b>", styles['Seccion']))
+        story.append(Paragraph("El índice de viabilidad normaliza el balance por la movilización total. Valores cercanos a +1 indican alta probabilidad de concreción, valores cercanos a -1 indican objetivos bloqueados.", styles['Cuerpo']))
+        try:
+            img = Image(figuras['viabilidad_fig'], width=16*cm, height=12*cm)
+            story.append(img)
+        except:
+            pass
+    
+    # Tabla de objetivos
+    if 'balance_objetivos' in datos and isinstance(datos['balance_objetivos'], pd.DataFrame):
+        bal_obj = datos['balance_objetivos']
+        story.append(Paragraph("<b>Resumen de Objetivos:</b>", styles['Seccion']))
+        
+        tabla_data = [['Objetivo', 'A favor', 'En contra', 'Balance', 'Viabilidad']]
+        for _, r in bal_obj.iterrows():
+            tabla_data.append([r['Objetivo'], str(r['A_favor']), str(r['En_contra']), f"{r['Balance_ponderado']:+.1f}", f"{r['Viabilidad']:+.2f}"])
+        
+        tabla = Table(tabla_data, colWidths=[2.5*cm, 2*cm, 2*cm, 2.5*cm, 2.5*cm])
+        tabla.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#10B981')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        story.append(tabla)
+    
+    story.append(PageBreak())
+    
+    # ============ 4. CONVERGENCIAS Y DIVERGENCIAS ============
+    story.append(Paragraph("4. CONVERGENCIAS Y DIVERGENCIAS", styles['Subtitulo']))
+    
+    story.append(Paragraph("El análisis de convergencias y divergencias identifica qué pares de actores son aliados naturales (comparten posiciones en muchos objetivos) y cuáles son rivales (tienen posiciones opuestas).", styles['Cuerpo']))
+    
+    if 'alianzas_fig' in figuras:
+        story.append(Paragraph("<b>Matriz de Alianzas y Conflictos:</b>", styles['Seccion']))
+        try:
+            img = Image(figuras['alianzas_fig'], width=16*cm, height=12*cm)
+            story.append(img)
+        except:
+            pass
+    
+    # Listar alianzas y conflictos
+    if 'CAA_pond' in datos and 'DAA_pond' in datos:
+        balance_mat = datos['CAA_pond'] - datos['DAA_pond']
+        actores = datos.get('actores', [])
+        
+        alianzas, conflictos = [], []
+        for i in range(len(actores)):
+            for j in range(i+1, len(actores)):
+                v = balance_mat.iloc[i, j]
+                if v > 2: alianzas.append((actores[i], actores[j], v))
+                elif v < 0: conflictos.append((actores[i], actores[j], v))
+        
+        if alianzas:
+            story.append(Paragraph("<b>Principales Alianzas:</b>", styles['Seccion']))
+            for a1, a2, v in sorted(alianzas, key=lambda x: -x[2])[:7]:
+                story.append(Paragraph(f"• {a1} ↔ {a2}: +{v:.1f}", styles['Cuerpo']))
+        
+        if conflictos:
+            story.append(Paragraph("<b>Principales Conflictos:</b>", styles['Seccion']))
+            for a1, a2, v in sorted(conflictos, key=lambda x: x[2])[:7]:
+                story.append(Paragraph(f"• {a1} ↔ {a2}: {v:.1f}", styles['Destacado']))
+    
+    story.append(PageBreak())
+    
+    # ============ 5. SÍNTESIS ESTRATÉGICA ============
+    story.append(Paragraph("5. SÍNTESIS ESTRATÉGICA", styles['Subtitulo']))
+    
+    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
+        bal = datos['balance']
+        if 'Clasificación' in bal.columns:
+            dominantes = bal[bal['Clasificación'] == 'Dominante']['Actor'].tolist()
+            enlace = bal[bal['Clasificación'] == 'Enlace']['Actor'].tolist()
+            
+            story.append(Paragraph("<b>Actores clave para la estrategia:</b>", styles['Seccion']))
+            if dominantes:
+                story.append(Paragraph(f"Los actores dominantes ({', '.join(dominantes)}) tienen el mayor poder de influencia y deben ser priorizados en cualquier negociación.", styles['Cuerpo']))
+            if enlace:
+                story.append(Paragraph(f"Los actores de enlace ({', '.join(enlace)}) pueden actuar como mediadores debido a sus múltiples conexiones.", styles['Cuerpo']))
+    
+    if 'balance_objetivos' in datos and isinstance(datos['balance_objetivos'], pd.DataFrame):
+        bal_obj = datos['balance_objetivos']
+        if 'Viabilidad' in bal_obj.columns:
+            viables = bal_obj[bal_obj['Viabilidad'] > 0.3]['Objetivo'].tolist()
+            bloqueados = bal_obj[bal_obj['Viabilidad'] < -0.3]['Objetivo'].tolist()
+            
+            story.append(Paragraph("<b>Objetivos estratégicos:</b>", styles['Seccion']))
+            if viables:
+                story.append(Paragraph(f"Objetivos con alta viabilidad para priorizar: {', '.join(viables[:5])}", styles['Cuerpo']))
+            if bloqueados:
+                story.append(Paragraph(f"Objetivos bloqueados que requieren reformulación: {', '.join(bloqueados[:5])}", styles['Destacado']))
+    
+    # ============ 6. RECOMENDACIONES ============
+    story.append(Paragraph("6. RECOMENDACIONES", styles['Subtitulo']))
+    
+    story.append(Paragraph("<b>Basado en el análisis MACTOR, se recomienda:</b>", styles['Cuerpo']))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph("1. <b>Negociación prioritaria:</b> Establecer diálogo primero con los actores dominantes, ya que su apoyo es determinante para el éxito de cualquier iniciativa.", styles['Cuerpo']))
+    story.append(Paragraph("2. <b>Construcción de coaliciones:</b> Identificar actores con alta convergencia para formar alianzas estratégicas iniciales.", styles['Cuerpo']))
+    story.append(Paragraph("3. <b>Gestión de conflictos:</b> Desarrollar estrategias específicas para los pares de actores con mayor divergencia.", styles['Cuerpo']))
+    story.append(Paragraph("4. <b>Priorización de objetivos:</b> Comenzar con los objetivos de mayor viabilidad para generar momentum positivo.", styles['Cuerpo']))
+    story.append(Paragraph("5. <b>Reformulación:</b> Los objetivos bloqueados deben ser reformulados o negociados antes de su implementación.", styles['Cuerpo']))
+    
+    story.append(Spacer(1, 2*cm))
+    story.append(Paragraph("---", styles['Cuerpo']))
+    story.append(Paragraph(f"<i>Informe generado automáticamente por MACTOR PRO v4.1</i>", styles['Cuerpo']))
+    story.append(Paragraph(f"<i>JETLEX Strategic Consulting - {datetime.now().strftime('%Y')}</i>", styles['Cuerpo']))
+    
+    # Construir PDF
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 # ============================================================
 # INTERFAZ PRINCIPAL
 # ============================================================
@@ -859,7 +1121,7 @@ with tab5:
                 for j in range(i+1, len(actores)):
                     v = balance_mat.iloc[i, j]
                     if v > 2: alianzas.append((actores[i], actores[j], v))
-                    elif v < -1: conflictos.append((actores[i], actores[j], v))
+                    elif v < 0: conflictos.append((actores[i], actores[j], v))  # Cambiado de -1 a 0
             
             col1, col2 = st.columns(2)
             with col1:
@@ -920,7 +1182,7 @@ with tab6:
 
 # TAB 7: EXPORTAR
 with tab7:
-    st.header("📥 Exportar")
+    st.header("📥 Exportar Resultados")
     
     data = st.session_state.mactor_data
     resultados = st.session_state.mactor_resultados
@@ -930,14 +1192,110 @@ with tab7:
         
         datos_exp = {**data, **resultados, 'k': k_midi}
         
-        buffer = generar_informe_excel(datos_exp, nombre)
-        st.download_button("📥 Descargar Excel", buffer, f"{nombre}_MACTOR.xlsx", 
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+        col1, col2 = st.columns(2)
         
-        st.subheader("CSVs")
-        for key, label in [('balance', 'Balance Actores'), ('balance_objetivos', 'Balance Objetivos')]:
-            if key in resultados and isinstance(resultados[key], pd.DataFrame):
-                st.download_button(f"📥 {label}", resultados[key].to_csv(index=False), f"{key}.csv", "text/csv", key=f"csv_{key}")
+        with col1:
+            st.subheader("📊 Excel")
+            buffer = generar_informe_excel(datos_exp, nombre)
+            st.download_button("📥 Descargar Excel", buffer, f"{nombre}_MACTOR.xlsx", 
+                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+        
+        with col2:
+            st.subheader("📄 Informe PDF")
+            st.markdown("Genera un informe completo con gráficos y análisis.")
+            
+            if st.button("🔄 Generar Informe PDF", type="secondary"):
+                with st.spinner("Generando informe PDF con gráficos..."):
+                    import tempfile
+                    import os
+                    
+                    figuras = {}
+                    temp_dir = tempfile.mkdtemp()
+                    
+                    try:
+                        # Generar gráficos como imágenes
+                        if 'balance' in resultados:
+                            bal = resultados['balance']
+                            med_Ii = resultados.get('med_Ii', bal['Ii'].median())
+                            med_Di = resultados.get('med_Di', bal['Di'].median())
+                            
+                            # Plano de actores
+                            fig_plano = crear_plano_influencias(bal, med_Ii, med_Di)
+                            path_plano = os.path.join(temp_dir, "plano.png")
+                            fig_plano.write_image(path_plano, width=1200, height=900, scale=2)
+                            figuras['plano_actores'] = path_plano
+                            
+                            # Balance de actores
+                            fig_balance = crear_histograma_balance(bal)
+                            path_balance = os.path.join(temp_dir, "balance.png")
+                            fig_balance.write_image(path_balance, width=1200, height=800, scale=2)
+                            figuras['balance_actores'] = path_balance
+                        
+                        if 'balance_objetivos' in resultados:
+                            bal_obj = resultados['balance_objetivos']
+                            
+                            # Balance de objetivos
+                            fig_bal_obj = crear_grafico_balance_objetivos(bal_obj)
+                            path_bal_obj = os.path.join(temp_dir, "balance_obj.png")
+                            fig_bal_obj.write_image(path_bal_obj, width=1200, height=900, scale=2)
+                            figuras['balance_objetivos_fig'] = path_bal_obj
+                            
+                            # Viabilidad
+                            fig_viab = crear_grafico_viabilidad_objetivos(bal_obj)
+                            path_viab = os.path.join(temp_dir, "viabilidad.png")
+                            fig_viab.write_image(path_viab, width=1200, height=900, scale=2)
+                            figuras['viabilidad_fig'] = path_viab
+                        
+                        if 'CAA_pond' in resultados and 'DAA_pond' in resultados:
+                            fig_alianzas = crear_matriz_alianzas_conflictos(resultados['CAA_pond'], resultados['DAA_pond'], True)
+                            path_alianzas = os.path.join(temp_dir, "alianzas.png")
+                            fig_alianzas.write_image(path_alianzas, width=1200, height=900, scale=2)
+                            figuras['alianzas_fig'] = path_alianzas
+                        
+                        # Generar PDF
+                        pdf_buffer = generar_informe_pdf(datos_exp, nombre, figuras)
+                        
+                        st.success("✅ Informe PDF generado correctamente")
+                        st.download_button(
+                            "📥 Descargar Informe PDF",
+                            pdf_buffer,
+                            f"{nombre}_Informe_MACTOR.pdf",
+                            "application/pdf",
+                            key="pdf_download"
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"Error generando PDF: {e}")
+                        st.info("💡 Tip: Si el error persiste, descarga el Excel que contiene todos los datos.")
+                    
+                    finally:
+                        # Limpiar archivos temporales
+                        for f in figuras.values():
+                            try: os.remove(f)
+                            except: pass
+                        try: os.rmdir(temp_dir)
+                        except: pass
+        
+        st.divider()
+        st.subheader("📋 CSVs individuales")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if 'balance' in resultados and isinstance(resultados['balance'], pd.DataFrame):
+                st.download_button("Balance Actores", resultados['balance'].to_csv(index=False), "balance_actores.csv", "text/csv", key="csv_ba")
+        
+        with col2:
+            if 'balance_objetivos' in resultados and isinstance(resultados['balance_objetivos'], pd.DataFrame):
+                st.download_button("Balance Objetivos", resultados['balance_objetivos'].to_csv(index=False), "balance_objetivos.csv", "text/csv", key="csv_bo")
+        
+        with col3:
+            if 'CAA_pond' in resultados:
+                st.download_button("Convergencias", resultados['CAA_pond'].to_csv(), "convergencias.csv", "text/csv", key="csv_caa")
+        
+        with col4:
+            if 'DAA_pond' in resultados:
+                st.download_button("Divergencias", resultados['DAA_pond'].to_csv(), "divergencias.csv", "text/csv", key="csv_daa")
+    
     else:
         st.warning("⚠️ Procesa datos primero")
 

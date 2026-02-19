@@ -2,9 +2,9 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting by Horacio Martín Pratto Chiarella
+Autor: JETLEX Strategic Consulting by Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
-Versión: 5.4 - Incluye análisis DIRECTO e INDIRECTO
+Versión: 5.5 - Metodología canónica Godet (umbral = MEDIA ARITMÉTICA)
 """
 
 import streamlit as st
@@ -265,14 +265,19 @@ def calcular_motricidad_dependencia_directa(M):
 def clasificar_variables_directas(motricidad, dependencia):
     """
     Clasifica variables según análisis DIRECTO
+    IMPORTANTE: Usa MEDIA ARITMÉTICA como umbral (metodología canónica de Godet)
+    Referencia: Godet, M. (2007) - "el umbral de clasificación es la media aritmética 
+    de motricidad y dependencia del sistema"
+    
     Nomenclatura clásica de Godet para análisis directo:
     - Motrices: Alta M, Baja D (palancas del sistema)
     - Enlace/Relé: Alta M, Alta D (nudos críticos)
     - Resultado/Dependientes: Baja M, Alta D (indicadores)
     - Autónomas/Excluidas: Baja M, Baja D (poco relevantes)
     """
-    med_mot = np.median(motricidad)
-    med_dep = np.median(dependencia)
+    # MEDIA ARITMÉTICA (metodología Godet/LIPSOR canónica)
+    med_mot = np.mean(motricidad)
+    med_dep = np.mean(dependencia)
     
     clasificacion = []
     for mot, dep in zip(motricidad, dependencia):
@@ -320,14 +325,18 @@ def calcular_motricidad_dependencia(MIDI):
 def clasificar_variables(motricidad, dependencia):
     """
     Clasifica variables según análisis INDIRECTO
+    IMPORTANTE: Usa MEDIA ARITMÉTICA como umbral (metodología canónica de Godet)
+    Referencia: Godet, M. (2007)
+    
     Nomenclatura para análisis indirecto:
     - Determinantes: Alta M, Baja D
     - Clave: Alta M, Alta D
     - Variables resultado: Baja M, Alta D
     - Autónomas: Baja M, Baja D
     """
-    med_mot = np.median(motricidad)
-    med_dep = np.median(dependencia)
+    # MEDIA ARITMÉTICA (metodología Godet/LIPSOR canónica)
+    med_mot = np.mean(motricidad)
+    med_dep = np.mean(dependencia)
     
     clasificacion = []
     for mot, dep in zip(motricidad, dependencia):
@@ -568,9 +577,9 @@ def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia,
             ))
     
     fig.add_hline(y=med_mot, line_dash="dash", line_color="gray", opacity=0.5,
-                  annotation_text=f"Mediana M={med_mot:.1f}")
+                  annotation_text=f"Media M={med_mot:.2f}")
     fig.add_vline(x=med_dep, line_dash="dash", line_color="gray", opacity=0.5,
-                  annotation_text=f"Mediana D={med_dep:.1f}")
+                  annotation_text=f"Media D={med_dep:.2f}")
     
     max_mot = max(motricidad) * 1.1
     max_dep = max(dependencia) * 1.1
@@ -866,7 +875,7 @@ def generar_informe_excel(res_directo, res_indirecto, nombres, codigos, M, nombr
 # ============================================================
 
 st.markdown('<div class="main-header">🎯 MICMAC PRO</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Análisis Estructural DIRECTO e INDIRECTO</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Análisis Estructural - Metodología Godet (LIPSOR)</div>', unsafe_allow_html=True)
 
 # Inicializar session state
 for key in ['matriz_procesada', 'nombres_variables', 'codigos_variables', 'mapeo_codigos', 
@@ -1053,7 +1062,7 @@ with tab2:
         
         fig_dir = crear_grafico_subsistemas(
             df_directo, med_mot_dir, med_dep_dir, motricidad_dir, dependencia_dir,
-            titulo=f"Análisis DIRECTO - Subsistemas (Mediana M={med_mot_dir:.1f}, D={med_dep_dir:.1f})",
+            titulo=f"Análisis DIRECTO - Subsistemas (Media M={med_mot_dir:.2f}, D={med_dep_dir:.2f})",
             usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente
         )
         mostrar_grafico_con_descargas(fig_dir, "subsistemas_directo", "tab2")
@@ -1525,6 +1534,6 @@ with tab8:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.4</b> | Análisis DIRECTO e INDIRECTO | Metodología Michel Godet (1990) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella | 2025
+<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella | 2025
 </div>
 """, unsafe_allow_html=True)

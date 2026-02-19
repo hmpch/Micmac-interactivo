@@ -544,52 +544,219 @@ def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
 # GENERACIÓN DE GRÁFICOS
 # ============================================================
 
-def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia, titulo, usar_codigos=True, mostrar_etiquetas=True, tamaño_fuente=10):
-    """Crea gráfico de subsistemas genérico (para directo o indirecto)"""
-    color_map = {
-        'Motrices': '#FF4444', 'Determinantes': '#FF4444',
-        'Enlace': '#1166CC', 'Clave': '#1166CC',
-        'Resultado': '#66BBFF', 'Variables resultado': '#66BBFF',
-        'Autónomas': '#FF9944'
+def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia, titulo, usar_codigos=True, mostrar_etiquetas=True, tamaño_fuente=10, M_original=None):
+    """
+    Crea gráfico de subsistemas profesional estilo LIPSOR/Godet
+    Con cuadrantes coloreados, estadísticas y diseño HD
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    
+    # Calcular límites
+    max_mot = max(motricidad) * 1.15
+    max_dep = max(dependencia) * 1.15
+    min_mot = min(0, min(motricidad) * 0.9)
+    min_dep = min(0, min(dependencia) * 0.9)
+    
+    # Contar clasificaciones
+    from collections import Counter
+    conteo = Counter(df_res['Clasificación'].tolist())
+    
+    # Colores por clasificación
+    colores_puntos = {
+        'Motrices': '#1E3A8A',      # Azul oscuro
+        'Determinantes': '#1E3A8A',
+        'Enlace': '#B91C1C',         # Rojo oscuro
+        'Clave': '#B91C1C',
+        'Resultado': '#DC2626',      # Rojo
+        'Variables resultado': '#DC2626',
+        'Autónomas': '#1E40AF'       # Azul
     }
     
+    # Colores de fondo de cuadrantes (muy suaves)
     fig = go.Figure()
     
+    # Agregar rectángulos de fondo para cada cuadrante
+    # Cuadrante MOTRICES (arriba-izquierda): verde muy suave
+    fig.add_shape(type="rect", x0=min_dep, y0=med_mot, x1=med_dep, y1=max_mot,
+                  fillcolor="rgba(220, 252, 231, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante ENLACE (arriba-derecha): rojo muy suave
+    fig.add_shape(type="rect", x0=med_dep, y0=med_mot, x1=max_dep, y1=max_mot,
+                  fillcolor="rgba(254, 226, 226, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante AUTÓNOMAS (abajo-izquierda): amarillo muy suave
+    fig.add_shape(type="rect", x0=min_dep, y0=min_mot, x1=med_dep, y1=med_mot,
+                  fillcolor="rgba(254, 249, 195, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante RESULTADO (abajo-derecha): azul muy suave
+    fig.add_shape(type="rect", x0=med_dep, y0=min_mot, x1=max_dep, y1=med_mot,
+                  fillcolor="rgba(219, 234, 254, 0.5)", line=dict(width=0), layer="below")
+    
+    # Agregar títulos de cuadrantes
+    font_cuadrante = dict(size=14, color='rgba(0,0,0,0.7)', family='Arial Black')
+    font_subtitulo = dict(size=9, color='rgba(0,0,0,0.5)', family='Arial')
+    
+    # MOTRICES / PALANCAS
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=max_mot * 0.92,
+                      text="<b>MOTRICES / PALANCAS</b>", showarrow=False,
+                      font=dict(size=13, color='#166534'), opacity=0.8)
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=max_mot * 0.85,
+                      text="Alta motricidad · Baja dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # ENLACE / CLAVE
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=max_mot * 0.92,
+                      text="<b>ENLACE / CLAVE</b>", showarrow=False,
+                      font=dict(size=13, color='#991B1B'), opacity=0.8)
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=max_mot * 0.85,
+                      text="Alta motricidad · Alta dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # AUTÓNOMAS
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=min_mot + (med_mot - min_mot) * 0.08,
+                      text="<b>AUTÓNOMAS</b>", showarrow=False,
+                      font=dict(size=13, color='#92400E'), opacity=0.8)
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=min_mot + (med_mot - min_mot) * 0.02,
+                      text="Baja motricidad · Baja dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # RESULTADO / DEPENDIENTES
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=min_mot + (med_mot - min_mot) * 0.08,
+                      text="<b>RESULTADO / DEPENDIENTES</b>", showarrow=False,
+                      font=dict(size=13, color='#1E40AF'), opacity=0.8)
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=min_mot + (med_mot - min_mot) * 0.02,
+                      text="Baja motricidad · Alta dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # Agregar puntos por clasificación
     for clasif in df_res['Clasificación'].unique():
-        color = color_map.get(clasif, '#999999')
+        color = colores_puntos.get(clasif, '#666666')
         mask = df_res['Clasificación'] == clasif
         df_temp = df_res[mask]
-        if len(df_temp) > 0:
+        n_vars = len(df_temp)
+        
+        if n_vars > 0:
             etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
-            hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_temp['Código'], df_temp['Variable'])]
+            hover_text = [f"<b>{c}</b><br>{v}<br>M={m:.0f}, D={d:.0f}" 
+                         for c, v, m, d in zip(df_temp['Código'], df_temp['Variable'], 
+                                               df_temp['Motricidad'], df_temp['Dependencia'])]
             
             fig.add_trace(go.Scatter(
                 x=df_temp['Dependencia'],
                 y=df_temp['Motricidad'],
                 mode='markers+text' if mostrar_etiquetas else 'markers',
-                name=clasif,
+                name=f"{clasif} ({n_vars})",
                 text=etiquetas_temp if mostrar_etiquetas else None,
                 textposition='top center',
-                textfont=dict(size=tamaño_fuente),
-                marker=dict(size=12, color=color, line=dict(width=1, color='black')),
-                hovertemplate="%{customdata}<br>M: %{y:.1f}<br>D: %{x:.1f}<extra></extra>",
-                customdata=hover_text
+                textfont=dict(size=tamaño_fuente, color='#1f2937'),
+                marker=dict(size=12, color=color, line=dict(width=1.5, color='white'),
+                           opacity=0.9),
+                hovertext=hover_text,
+                hoverinfo='text'
             ))
     
-    fig.add_hline(y=med_mot, line_dash="dash", line_color="gray", opacity=0.5,
-                  annotation_text=f"Media M={med_mot:.2f}")
-    fig.add_vline(x=med_dep, line_dash="dash", line_color="gray", opacity=0.5,
-                  annotation_text=f"Media D={med_dep:.2f}")
+    # Líneas de media (más visibles)
+    fig.add_hline(y=med_mot, line_dash="dash", line_color="#9CA3AF", line_width=2, opacity=0.8)
+    fig.add_vline(x=med_dep, line_dash="dash", line_color="#9CA3AF", line_width=2, opacity=0.8)
     
-    max_mot = max(motricidad) * 1.1
-    max_dep = max(dependencia) * 1.1
+    # Calcular estadísticas para el panel
+    n_vars = len(df_res)
+    fill_rate = 0
+    if M_original is not None:
+        n_total = M_original.shape[0] * M_original.shape[1]
+        n_nonzero = (M_original != 0).sum()
+        fill_rate = (n_nonzero / n_total) * 100
+    
+    # Top 5 Motrices
+    top5_mot = df_res.nlargest(5, 'Motricidad')[['Código', 'Motricidad']]
+    # Top 5 Dependientes
+    top5_dep = df_res.nlargest(5, 'Dependencia')[['Código', 'Dependencia']]
+    
+    # Crear texto de estadísticas para anotación
+    stats_text = f"<b>ESTADÍSTICAS</b><br>"
+    stats_text += f"Variables: {n_vars}<br>"
+    if fill_rate > 0:
+        stats_text += f"Fill rate: {fill_rate:.1f}%<br>"
+    stats_text += f"Prom. M: {med_mot:.1f}<br>"
+    stats_text += f"Prom. D: {med_dep:.1f}<br><br>"
+    stats_text += f"<b>TOP 5 MOTRICES</b><br>"
+    for _, row in top5_mot.iterrows():
+        stats_text += f"{row['Código']}: M={row['Motricidad']:.0f}<br>"
+    stats_text += f"<br><b>TOP 5 DEPENDIENTES</b><br>"
+    for _, row in top5_dep.iterrows():
+        stats_text += f"{row['Código']}: D={row['Dependencia']:.0f}<br>"
+    
+    # Subtítulo con metadata
+    subtitulo = f"Análisis directo · Matriz MID {n_vars}×{n_vars}"
+    if fill_rate > 0:
+        subtitulo += f" · Fill rate: {fill_rate:.1f}%"
+    subtitulo += f" · Promedios: M={med_mot:.1f}, D={med_dep:.1f}"
     
     fig.update_layout(
-        title=titulo,
-        xaxis_title="Dependencia (D)",
-        yaxis_title="Motricidad (M)",
+        title=dict(
+            text=f"<b>PLANO MOTRICIDAD-DEPENDENCIA: CLASIFICACIÓN DE {n_vars} VARIABLES MICMAC</b><br><sup>{subtitulo}</sup>",
+            x=0.5,
+            font=dict(size=16)
+        ),
+        xaxis=dict(
+            title=dict(text="<b>DEPENDENCIA →</b>", font=dict(size=12)),
+            range=[min_dep, max_dep],
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=dict(text="<b>↑ MOTRICIDAD</b>", font=dict(size=12)),
+            range=[min_mot, max_mot],
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False
+        ),
         height=700,
-        showlegend=True
+        showlegend=True,
+        legend=dict(
+            title=dict(text="<b>CLASIFICACIÓN</b>", font=dict(size=11)),
+            orientation="v",
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=1.02,
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1
+        ),
+        margin=dict(r=200),  # Espacio para la leyenda
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        # Agregar anotación con estadísticas
+        annotations=[
+            dict(
+                x=1.02,
+                y=0.45,
+                xref="paper",
+                yref="paper",
+                text=stats_text,
+                showarrow=False,
+                font=dict(size=9, family="Courier New"),
+                align="left",
+                bgcolor="rgba(249,250,251,0.95)",
+                bordercolor="rgba(0,0,0,0.2)",
+                borderwidth=1,
+                borderpad=8
+            ),
+            # Pie de página
+            dict(
+                x=0.5,
+                y=-0.12,
+                xref="paper",
+                yref="paper",
+                text="Fuente: Elaboración propia · Metodología: Godet/LIPSOR · Software: MICMAC PRO v5.5",
+                showarrow=False,
+                font=dict(size=9, color='gray'),
+                align="center"
+            )
+        ]
     )
     
     return fig
@@ -1057,13 +1224,14 @@ with tab2:
             use_container_width=True, height=400
         )
         
-        # Gráfico de subsistemas DIRECTO
+        # Gráfico de subsistemas DIRECTO - Versión HD
         st.subheader("🗺️ Plano de Subsistemas (DIRECTO)")
         
         fig_dir = crear_grafico_subsistemas(
             df_directo, med_mot_dir, med_dep_dir, motricidad_dir, dependencia_dir,
-            titulo=f"Análisis DIRECTO - Subsistemas (Media M={med_mot_dir:.2f}, D={med_dep_dir:.2f})",
-            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente
+            titulo="Análisis DIRECTO",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+            tamaño_fuente=tamaño_fuente, M_original=M
         )
         mostrar_grafico_con_descargas(fig_dir, "subsistemas_directo", "tab2")
         
@@ -1166,13 +1334,14 @@ with tab3:
             use_container_width=True, height=400
         )
         
-        # Gráfico de subsistemas INDIRECTO
+        # Gráfico de subsistemas INDIRECTO - Versión HD
         st.subheader("🗺️ Plano de Subsistemas (INDIRECTO)")
         
         fig_ind = crear_grafico_subsistemas(
             df_indirecto, med_mot_ind, med_dep_ind, motricidad_ind, dependencia_ind,
-            titulo=f"Análisis INDIRECTO - Subsistemas (α={alpha}, K={K_usado})",
-            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente
+            titulo="Análisis INDIRECTO",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+            tamaño_fuente=tamaño_fuente, M_original=M
         )
         mostrar_grafico_con_descargas(fig_ind, "subsistemas_indirecto", "tab3")
         
@@ -1275,14 +1444,17 @@ with tab4:
         st.subheader("📈 Planos de Subsistemas Comparados")
         col1, col2 = st.columns(2)
         
+        M = st.session_state.M_original
+        
         with col1:
             fig_dir = crear_grafico_subsistemas(
                 res_dir['df_resultados'], res_dir['med_mot'], res_dir['med_dep'],
                 res_dir['motricidad'], res_dir['dependencia'],
                 titulo="DIRECTO",
-                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente-2
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+                tamaño_fuente=tamaño_fuente-2, M_original=M
             )
-            fig_dir.update_layout(height=500)
+            fig_dir.update_layout(height=500, margin=dict(r=50))
             st.plotly_chart(fig_dir, use_container_width=True, key="comp_dir")
         
         with col2:
@@ -1290,9 +1462,10 @@ with tab4:
                 res_ind['df_resultados'], res_ind['med_mot'], res_ind['med_dep'],
                 res_ind['motricidad'], res_ind['dependencia'],
                 titulo="INDIRECTO",
-                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente-2
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+                tamaño_fuente=tamaño_fuente-2, M_original=M
             )
-            fig_ind.update_layout(height=500)
+            fig_ind.update_layout(height=500, margin=dict(r=50))
             st.plotly_chart(fig_ind, use_container_width=True, key="comp_ind")
         
         # Exportar comparación

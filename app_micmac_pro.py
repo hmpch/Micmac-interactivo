@@ -664,9 +664,11 @@ def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia,
     n_vars = len(df_res)
     fill_rate = 0
     if M_original is not None:
-        n_total = M_original.shape[0] * M_original.shape[1]
+        n = M_original.shape[0]
+        # Fill rate: excluir diagonal (autoinfluencia no se cuenta en MICMAC)
+        n_total = n * (n - 1)  # Celdas posibles sin diagonal
         n_nonzero = (M_original != 0).sum()
-        fill_rate = (n_nonzero / n_total) * 100
+        fill_rate = (n_nonzero / n_total) * 100 if n_total > 0 else 0
     
     # Top 5 Motrices
     top5_mot = df_res.nlargest(5, 'Motricidad')[['Código', 'Motricidad']]

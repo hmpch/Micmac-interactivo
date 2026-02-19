@@ -2,9 +2,9 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
+Autor: JETLEX Strategic Consulting by Horacio Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
-Versión: 5.3 - Generación inteligente de códigos cortos
+Versión: 5.4 - Incluye análisis DIRECTO e INDIRECTO
 """
 
 import streamlit as st
@@ -46,12 +46,19 @@ st.markdown("""
         border-left: 4px solid #1f77b4;
         margin: 1rem 0;
     }
-    .download-tip {
-        background-color: #f0f8ff;
-        padding: 0.5rem 1rem;
-        border-radius: 0.3rem;
-        font-size: 0.9rem;
-        margin: 0.5rem 0;
+    .warning-box {
+        background-color: #fff3cd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #ffc107;
+        margin: 1rem 0;
+    }
+    .success-box {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #28a745;
+        margin: 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -60,7 +67,6 @@ st.markdown("""
 # FUNCIONES DE GENERACIÓN DE CÓDIGOS INTELIGENTES
 # ============================================================
 
-# Palabras a ignorar al generar abreviaturas (stopwords en español e inglés)
 STOPWORDS = {
     'de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'a', 'con', 'por', 'para',
     'un', 'una', 'unos', 'unas', 'al', 'su', 'sus', 'que', 'se', 'es', 'son',
@@ -69,26 +75,20 @@ STOPWORDS = {
 }
 
 def tiene_codigo_explicito(nombre):
-    """
-    Detecta si el nombre ya tiene un código explícito al inicio.
-    Ejemplos: P1, E2, TENS_GEO, V12, EC1, etc.
-    """
+    """Detecta si el nombre ya tiene un código explícito al inicio."""
     if pd.isna(nombre):
         return False, None
     
     nombre = str(nombre).strip()
     
-    # Patrón 1: Letra(s) + número al inicio (P1, E2, EC1, V12)
     match = re.match(r'^([A-Za-z]+\d+)\s', nombre)
     if match:
         return True, match.group(1).upper()
     
-    # Patrón 2: Código tipo TENS_GEO (mayúsculas con guiones bajos, corto)
     match = re.match(r'^([A-Z][A-Z0-9_]{1,12})$', nombre)
     if match:
         return True, match.group(1)
     
-    # Patrón 3: Código corto al inicio seguido de espacio y descripción
     match = re.match(r'^([A-Z][A-Z0-9_]{1,12})\s', nombre)
     if match and len(match.group(1)) <= 12:
         return True, match.group(1)
@@ -96,55 +96,30 @@ def tiene_codigo_explicito(nombre):
     return False, None
 
 def generar_abreviatura_inteligente(nombre, max_chars=10):
-    """
-    Genera una abreviatura inteligente a partir de un nombre largo.
-    
-    Estrategia:
-    1. Elimina stopwords
-    2. Toma las primeras letras de cada palabra significativa
-    3. Limita al máximo de caracteres
-    
-    Ejemplos:
-    - "Relación comercial Marruecos Ceuta" → "RELCOMMARC"
-    - "Inversión marroquí en infraestructuras civiles" → "INVMARINFC"
-    - "Programa de Asociación y Cooperación Individual" → "PROGASOCCO"
-    """
+    """Genera una abreviatura inteligente a partir de un nombre largo."""
     if pd.isna(nombre):
         return "VAR"
     
     nombre = str(nombre).strip()
-    
-    # Remover caracteres especiales y números al inicio si no son código
     nombre_limpio = re.sub(r'^[^a-zA-Z]+', '', nombre)
-    
-    # Dividir en palabras
     palabras = re.findall(r'[A-Za-záéíóúñÁÉÍÓÚÑ]+', nombre_limpio)
-    
-    # Filtrar stopwords
     palabras_significativas = [p for p in palabras if p.lower() not in STOPWORDS]
     
-    # Si no quedan palabras significativas, usar las originales
     if not palabras_significativas:
         palabras_significativas = palabras
     
     if not palabras_significativas:
         return "VAR"
     
-    # Estrategia de abreviación según cantidad de palabras
     n_palabras = len(palabras_significativas)
     
     if n_palabras == 1:
-        # Una sola palabra: tomar los primeros max_chars caracteres
         return palabras_significativas[0][:max_chars].upper()
-    
     elif n_palabras == 2:
-        # Dos palabras: dividir caracteres entre ambas
         chars_cada = max_chars // 2
         abrev = palabras_significativas[0][:chars_cada] + palabras_significativas[1][:chars_cada]
         return abrev.upper()[:max_chars]
-    
     else:
-        # Tres o más palabras: distribuir caracteres
         if n_palabras <= 4:
             chars_cada = max(2, max_chars // n_palabras)
         else:
@@ -154,41 +129,28 @@ def generar_abreviatura_inteligente(nombre, max_chars=10):
         return abrev.upper()[:max_chars]
 
 def extraer_codigo(nombre_variable, max_chars=10):
-    """
-    Extrae o genera un código corto para una variable.
-    
-    1. Si tiene código explícito (P1, TENS_GEO, etc.) → usar ese
-    2. Si no → generar abreviatura inteligente
-    """
+    """Extrae o genera un código corto para una variable."""
     if pd.isna(nombre_variable):
         return "VAR"
     
     nombre = str(nombre_variable).strip()
-    
-    # Verificar si ya tiene código explícito
     tiene_codigo, codigo = tiene_codigo_explicito(nombre)
     if tiene_codigo:
         return codigo[:max_chars]
     
-    # Generar abreviatura inteligente
     return generar_abreviatura_inteligente(nombre, max_chars)
 
 def generar_codigos_y_mapeo(nombres_variables, max_chars=10):
-    """
-    Genera códigos únicos para cada variable con longitud máxima configurable.
-    Garantiza que no haya duplicados.
-    """
+    """Genera códigos únicos para cada variable."""
     codigos = []
     mapeo = {}
-    codigos_usados = {}  # Diccionario para contar usos
+    codigos_usados = {}
     
     for i, nombre in enumerate(nombres_variables):
         codigo_base = extraer_codigo(nombre, max_chars)
         
-        # Si el código ya existe, agregar sufijo numérico
         if codigo_base in codigos_usados:
             codigos_usados[codigo_base] += 1
-            # Calcular cuántos caracteres podemos usar para el sufijo
             sufijo = str(codigos_usados[codigo_base])
             max_base = max_chars - len(sufijo)
             codigo = codigo_base[:max_base] + sufijo
@@ -230,7 +192,7 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
         'modeBarButtonsToRemove': ['lasso2d', 'select2d']
     }
     
-    st.plotly_chart(fig, use_container_width=True, config=config)
+    st.plotly_chart(fig, use_container_width=True, config=config, key=f"chart_{nombre_base}_{key_suffix}")
     
     col1, col2, col3 = st.columns(3)
     
@@ -275,11 +237,63 @@ def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
             st.markdown("📷 **PNG:** Clic en 📷 del gráfico")
 
 # ============================================================
-# FUNCIONES DE CÁLCULO MICMAC
+# FUNCIONES DE CÁLCULO MICMAC - DIRECTO E INDIRECTO
 # ============================================================
 
+def calcular_mid_directo(M):
+    """
+    Análisis DIRECTO (MID)
+    Usa la matriz original M sin transformaciones.
+    Valores en escala original (0-3 × n variables).
+    """
+    M = np.array(M, dtype=float)
+    np.fill_diagonal(M, 0)
+    return M
+
+def calcular_motricidad_dependencia_directa(M):
+    """
+    Calcula Motricidad y Dependencia DIRECTAS
+    - Motricidad (M): suma de la fila = influencia que EJERCE la variable
+    - Dependencia (D): suma de la columna = influencia que RECIBE la variable
+    """
+    M = np.array(M, dtype=float)
+    np.fill_diagonal(M, 0)
+    motricidad = M.sum(axis=1)  # Suma de filas
+    dependencia = M.sum(axis=0)  # Suma de columnas
+    return motricidad, dependencia
+
+def clasificar_variables_directas(motricidad, dependencia):
+    """
+    Clasifica variables según análisis DIRECTO
+    Nomenclatura clásica de Godet para análisis directo:
+    - Motrices: Alta M, Baja D (palancas del sistema)
+    - Enlace/Relé: Alta M, Alta D (nudos críticos)
+    - Resultado/Dependientes: Baja M, Alta D (indicadores)
+    - Autónomas/Excluidas: Baja M, Baja D (poco relevantes)
+    """
+    med_mot = np.median(motricidad)
+    med_dep = np.median(dependencia)
+    
+    clasificacion = []
+    for mot, dep in zip(motricidad, dependencia):
+        if mot >= med_mot and dep < med_dep:
+            clasificacion.append("Motrices")
+        elif mot >= med_mot and dep >= med_dep:
+            clasificacion.append("Enlace")
+        elif mot < med_mot and dep >= med_dep:
+            clasificacion.append("Resultado")
+        else:
+            clasificacion.append("Autónomas")
+    
+    return clasificacion, med_mot, med_dep
+
 def calcular_midi(M, alpha=0.5, K=3):
-    """Calcula la Matriz de Influencias Directas e Indirectas (MIDI)"""
+    """
+    Análisis INDIRECTO (MIDI)
+    Calcula la Matriz de Influencias Directas e Indirectas.
+    MIDI = M + αM² + α²M³ + ... + α^(K-1)M^K
+    Valores en escala amplificada (pueden ser millones).
+    """
     M = np.array(M, dtype=float)
     n = M.shape[0]
     
@@ -298,13 +312,20 @@ def calcular_midi(M, alpha=0.5, K=3):
     return MIDI
 
 def calcular_motricidad_dependencia(MIDI):
-    """Calcula motricidad y dependencia de cada variable"""
+    """Calcula motricidad y dependencia de MIDI (análisis indirecto)"""
     motricidad = MIDI.sum(axis=1)
     dependencia = MIDI.sum(axis=0)
     return motricidad, dependencia
 
 def clasificar_variables(motricidad, dependencia):
-    """Clasifica variables en 4 cuadrantes según metodología Godet"""
+    """
+    Clasifica variables según análisis INDIRECTO
+    Nomenclatura para análisis indirecto:
+    - Determinantes: Alta M, Baja D
+    - Clave: Alta M, Alta D
+    - Variables resultado: Baja M, Alta D
+    - Autónomas: Baja M, Baja D
+    """
     med_mot = np.median(motricidad)
     med_dep = np.median(dependencia)
     
@@ -364,6 +385,16 @@ def identificar_relaciones_fuertes(M, nombres, umbral=2):
                     'Intensidad': M[i, j]
                 })
     return sorted(relaciones, key=lambda x: x['Intensidad'], reverse=True)
+
+def comparar_directo_indirecto(df_directo, df_indirecto):
+    """Compara clasificaciones entre análisis directo e indirecto"""
+    df_comp = pd.merge(
+        df_directo[['Código', 'Variable', 'Clasificación']].rename(columns={'Clasificación': 'Clasif_Directa'}),
+        df_indirecto[['Código', 'Clasificación']].rename(columns={'Clasificación': 'Clasif_Indirecta'}),
+        on='Código'
+    )
+    df_comp['Cambio'] = df_comp['Clasif_Directa'] != df_comp['Clasif_Indirecta']
+    return df_comp
 
 # ============================================================
 # PROCESADOR ROBUSTO DE ARCHIVOS EXCEL
@@ -504,6 +535,56 @@ def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
 # GENERACIÓN DE GRÁFICOS
 # ============================================================
 
+def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia, titulo, usar_codigos=True, mostrar_etiquetas=True, tamaño_fuente=10):
+    """Crea gráfico de subsistemas genérico (para directo o indirecto)"""
+    color_map = {
+        'Motrices': '#FF4444', 'Determinantes': '#FF4444',
+        'Enlace': '#1166CC', 'Clave': '#1166CC',
+        'Resultado': '#66BBFF', 'Variables resultado': '#66BBFF',
+        'Autónomas': '#FF9944'
+    }
+    
+    fig = go.Figure()
+    
+    for clasif in df_res['Clasificación'].unique():
+        color = color_map.get(clasif, '#999999')
+        mask = df_res['Clasificación'] == clasif
+        df_temp = df_res[mask]
+        if len(df_temp) > 0:
+            etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
+            hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_temp['Código'], df_temp['Variable'])]
+            
+            fig.add_trace(go.Scatter(
+                x=df_temp['Dependencia'],
+                y=df_temp['Motricidad'],
+                mode='markers+text' if mostrar_etiquetas else 'markers',
+                name=clasif,
+                text=etiquetas_temp if mostrar_etiquetas else None,
+                textposition='top center',
+                textfont=dict(size=tamaño_fuente),
+                marker=dict(size=12, color=color, line=dict(width=1, color='black')),
+                hovertemplate="%{customdata}<br>M: %{y:.1f}<br>D: %{x:.1f}<extra></extra>",
+                customdata=hover_text
+            ))
+    
+    fig.add_hline(y=med_mot, line_dash="dash", line_color="gray", opacity=0.5,
+                  annotation_text=f"Mediana M={med_mot:.1f}")
+    fig.add_vline(x=med_dep, line_dash="dash", line_color="gray", opacity=0.5,
+                  annotation_text=f"Mediana D={med_dep:.1f}")
+    
+    max_mot = max(motricidad) * 1.1
+    max_dep = max(dependencia) * 1.1
+    
+    fig.update_layout(
+        title=titulo,
+        xaxis_title="Dependencia (D)",
+        yaxis_title="Motricidad (M)",
+        height=700,
+        showlegend=True
+    )
+    
+    return fig
+
 def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=True):
     """Crea un gráfico de red de influencias fuertes"""
     etiquetas = codigos if usar_codigos else nombres
@@ -534,7 +615,6 @@ def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=Tr
     node_sizes = 15 + (influencia_recibida / max(influencia_recibida.max(), 1)) * 30
     motricidad = M.sum(axis=1)
     
-    # Hover muestra nombre completo
     hover_text = [f"<b>{codigos[i]}</b><br>{nombres[i]}<br>Influencia recibida: {influencia_recibida[i]:.0f}" for i in range(n)]
     
     node_trace = go.Scatter(
@@ -598,14 +678,14 @@ def crear_grafico_estabilidad(M, nombres, codigos, alpha=0.5, usar_codigos=True)
     
     return fig
 
-def crear_grafico_distribucion_cuadrantes(clasificacion):
+def crear_grafico_distribucion_cuadrantes(clasificacion, titulo="Distribución de Variables"):
     """Gráfico de distribución por cuadrantes"""
     conteo = pd.Series(clasificacion).value_counts()
     
     colores = {
-        'Determinantes': '#FF4444',
-        'Clave': '#1166CC',
-        'Variables resultado': '#66BBFF',
+        'Motrices': '#FF4444', 'Determinantes': '#FF4444',
+        'Enlace': '#1166CC', 'Clave': '#1166CC',
+        'Resultado': '#66BBFF', 'Variables resultado': '#66BBFF',
         'Autónomas': '#FF9944'
     }
     
@@ -617,7 +697,7 @@ def crear_grafico_distribucion_cuadrantes(clasificacion):
         textinfo='label+percent+value'
     )])
     
-    fig.update_layout(title='Distribución de Variables por Cuadrante', height=400)
+    fig.update_layout(title=titulo, height=400)
     
     return fig
 
@@ -656,13 +736,7 @@ def crear_grafico_inestabilidad(df_resultados):
     fig = px.bar(df, x='Código', y='Inestabilidad',
         title='Índice de Inestabilidad (Variables que amplifican cambios)',
         color='Clasificación',
-        hover_data=['Variable'],
-        color_discrete_map={
-            'Determinantes': '#FF4444',
-            'Clave': '#1166CC',
-            'Variables resultado': '#66BBFF',
-            'Autónomas': '#FF9944'
-        })
+        hover_data=['Variable'])
     
     fig.update_layout(height=400)
     
@@ -706,51 +780,81 @@ def crear_grafico_comparativo_barras(df_resultados, top_n=15):
 # GENERACIÓN DE INFORME
 # ============================================================
 
-def generar_informe_excel(res, nombres, codigos, M, nombre_proyecto):
-    """Genera informe completo en Excel con múltiples hojas"""
+def generar_informe_excel(res_directo, res_indirecto, nombres, codigos, M, nombre_proyecto):
+    """Genera informe completo en Excel con análisis DIRECTO e INDIRECTO"""
     buffer = BytesIO()
     
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        # Resumen ejecutivo
         resumen = pd.DataFrame({
             'Parámetro': [
                 'Fecha de análisis', 'Nombre del proyecto', 'Total de variables',
-                'Alpha (α)', 'K (profundidad)', 'Variables Determinantes',
-                'Variables Clave', 'Variables Resultado', 'Variables Autónomas',
-                'Densidad de la matriz (%)'
+                'Alpha (α)', 'K (profundidad)',
+                '--- ANÁLISIS DIRECTO ---', '',
+                'Motrices (Directo)', 'Enlace (Directo)', 'Resultado (Directo)', 'Autónomas (Directo)',
+                '--- ANÁLISIS INDIRECTO ---', '',
+                'Determinantes (Indirecto)', 'Clave (Indirecto)', 'Resultado (Indirecto)', 'Autónomas (Indirecto)',
+                '---', 'Densidad de la matriz (%)'
             ],
             'Valor': [
                 datetime.now().strftime('%Y-%m-%d %H:%M'), nombre_proyecto, len(nombres),
-                res['alpha'], res['K'],
-                sum(c == 'Determinantes' for c in res['clasificacion']),
-                sum(c == 'Clave' for c in res['clasificacion']),
-                sum(c == 'Variables resultado' for c in res['clasificacion']),
-                sum(c == 'Autónomas' for c in res['clasificacion']),
-                round((M != 0).sum() / M.size * 100, 1)
+                res_indirecto['alpha'], res_indirecto['K'],
+                '', '',
+                sum(c == 'Motrices' for c in res_directo['clasificacion']),
+                sum(c == 'Enlace' for c in res_directo['clasificacion']),
+                sum(c == 'Resultado' for c in res_directo['clasificacion']),
+                sum(c == 'Autónomas' for c in res_directo['clasificacion']),
+                '', '',
+                sum(c == 'Determinantes' for c in res_indirecto['clasificacion']),
+                sum(c == 'Clave' for c in res_indirecto['clasificacion']),
+                sum(c == 'Variables resultado' for c in res_indirecto['clasificacion']),
+                sum(c == 'Autónomas' for c in res_indirecto['clasificacion']),
+                '', round((M != 0).sum() / M.size * 100, 1)
             ]
         })
         resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
         
-        res['df_resultados'].to_excel(writer, sheet_name='Ranking Variables', index=False)
+        # Ranking DIRECTO
+        res_directo['df_resultados'].to_excel(writer, sheet_name='Ranking DIRECTO', index=False)
         
-        for cuadrante in ['Determinantes', 'Clave', 'Variables resultado', 'Autónomas']:
-            df_cuad = res['df_resultados'][res['df_resultados']['Clasificación'] == cuadrante]
+        # Ranking INDIRECTO
+        res_indirecto['df_resultados'].to_excel(writer, sheet_name='Ranking INDIRECTO', index=False)
+        
+        # Comparación Directo vs Indirecto
+        df_comp = comparar_directo_indirecto(res_directo['df_resultados'], res_indirecto['df_resultados'])
+        df_comp.to_excel(writer, sheet_name='Comparación Dir-Indir', index=False)
+        
+        # Variables por cuadrante DIRECTO
+        for cuadrante in ['Motrices', 'Enlace', 'Resultado', 'Autónomas']:
+            df_cuad = res_directo['df_resultados'][res_directo['df_resultados']['Clasificación'] == cuadrante]
             if len(df_cuad) > 0:
-                df_cuad.to_excel(writer, sheet_name=cuadrante[:30], index=False)
+                df_cuad.to_excel(writer, sheet_name=f'Dir_{cuadrante[:10]}', index=False)
         
-        pd.DataFrame(res['MIDI'], index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MIDI')
+        # Variables por cuadrante INDIRECTO
+        for cuadrante in ['Determinantes', 'Clave', 'Variables resultado', 'Autónomas']:
+            df_cuad = res_indirecto['df_resultados'][res_indirecto['df_resultados']['Clasificación'] == cuadrante]
+            if len(df_cuad) > 0:
+                nombre_hoja = f'Ind_{cuadrante[:10]}'
+                df_cuad.to_excel(writer, sheet_name=nombre_hoja, index=False)
         
+        # Matriz MID Original
+        pd.DataFrame(M, index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MID Original')
+        
+        # Matriz MIDI
+        pd.DataFrame(res_indirecto['MIDI'], index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MIDI')
+        
+        # Relaciones fuertes
         relaciones = identificar_relaciones_fuertes(M, codigos, umbral=2)
         if relaciones:
             pd.DataFrame(relaciones).to_excel(writer, sheet_name='Relaciones Fuertes', index=False)
         
+        # Diccionario de códigos
         pd.DataFrame({'Código': codigos, 'Variable': nombres}).to_excel(writer, sheet_name='Diccionario', index=False)
         
-        pd.DataFrame(M, index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MID Original')
-        
-        df_estrategico = res['df_resultados'].copy()
+        # Análisis estratégico
+        df_estrategico = res_indirecto['df_resultados'].copy()
         df_estrategico['Valor_Estratégico'] = df_estrategico['Motricidad'] + df_estrategico['Dependencia']
         df_estrategico['Índice_Inestabilidad'] = df_estrategico['Motricidad'] * df_estrategico['Dependencia']
-        df_estrategico['Distancia_Eje'] = abs(df_estrategico['Motricidad'] - df_estrategico['Dependencia'])
         df_estrategico = df_estrategico.sort_values('Valor_Estratégico', ascending=False)
         df_estrategico.to_excel(writer, sheet_name='Análisis Estratégico', index=False)
     
@@ -762,10 +866,11 @@ def generar_informe_excel(res, nombres, codigos, M, nombre_proyecto):
 # ============================================================
 
 st.markdown('<div class="main-header">🎯 MICMAC PRO</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Análisis Estructural con Conversor Integrado</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Análisis Estructural DIRECTO e INDIRECTO</div>', unsafe_allow_html=True)
 
 # Inicializar session state
-for key in ['matriz_procesada', 'nombres_variables', 'codigos_variables', 'mapeo_codigos', 'resultados', 'hojas_excel', 'M_original']:
+for key in ['matriz_procesada', 'nombres_variables', 'codigos_variables', 'mapeo_codigos', 
+            'resultados_directo', 'resultados_indirecto', 'hojas_excel', 'M_original']:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -815,27 +920,18 @@ with st.sidebar:
     
     st.subheader("3. Visualización")
     mostrar_etiquetas = st.checkbox("Mostrar etiquetas", value=True)
-    usar_codigos = st.checkbox("Usar códigos cortos", value=True,
-        help="Genera automáticamente códigos cortos para nombres largos")
-    
-    # Nueva opción: longitud máxima de códigos
-    max_chars_codigo = st.slider(
-        "Longitud máx. códigos",
-        min_value=4,
-        max_value=15,
-        value=10,
-        help="Máximo de caracteres para los códigos de variables"
-    )
-    
+    usar_codigos = st.checkbox("Usar códigos cortos", value=True)
+    max_chars_codigo = st.slider("Longitud máx. códigos", min_value=4, max_value=15, value=10)
     tamaño_fuente = st.slider("Tamaño fuente", min_value=8, max_value=16, value=10)
 
-# Pestañas principales
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+# Pestañas principales - AHORA CON PESTAÑA DIRECTO
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📋 Datos",
-    "📊 Análisis MICMAC",
-    "📈 Subsistemas",
+    "📊 Análisis DIRECTO",
+    "📈 Análisis INDIRECTO",
+    "🔄 Comparación",
     "🎯 Eje Estratégico",
-    "🔬 Análisis Avanzado",
+    "🔬 Avanzado",
     "📑 Informe",
     "📥 Exportar"
 ])
@@ -852,7 +948,6 @@ with tab1:
         if df_procesado is not None:
             st.success(mensaje)
             
-            # Generar códigos con longitud configurable
             codigos, mapeo = generar_codigos_y_mapeo(nombres, max_chars=max_chars_codigo)
             
             st.session_state.matriz_procesada = df_procesado
@@ -870,94 +965,185 @@ with tab1:
             col3.metric("Densidad", f"{densidad:.1f}%")
             
             st.subheader("🏷️ Tabla de Variables y Códigos")
-            st.markdown("""
-            <div class="info-box">
-            Los códigos se generan automáticamente:
-            <ul>
-            <li><b>Si la variable tiene código explícito</b> (P1, TENS_GEO, etc.) → se usa ese código</li>
-            <li><b>Si el nombre es largo</b> → se genera abreviatura inteligente</li>
-            </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            
             df_codigos = pd.DataFrame({
                 'Código': codigos,
                 'Variable (nombre completo)': nombres
             })
             st.dataframe(df_codigos, use_container_width=True, height=300)
             
-            st.subheader("📊 Vista previa de la matriz")
+            st.subheader("📊 Vista previa de la matriz MID")
             st.dataframe(df_procesado, use_container_width=True, height=400)
         else:
             st.error(f"❌ {mensaje}")
     else:
         st.info("👆 Sube un archivo Excel con tu matriz de influencias")
-        st.markdown("""
-        **El sistema genera automáticamente códigos cortos:**
-        - `P1 Marruecos - Rusia` → `P1`
-        - `TENS_GEO` → `TENS_GEO`
-        - `Relación comercial Marruecos Ceuta` → `RELCOMMAR`
-        - `Inversión marroquí en infraestructuras` → `INVMARINF`
-        """)
 
 # ============================================================
-# TAB 2: ANÁLISIS MICMAC
+# TAB 2: ANÁLISIS DIRECTO
 # ============================================================
 with tab2:
-    st.header("📊 Análisis MICMAC")
+    st.header("📊 Análisis DIRECTO (MID)")
+    
+    st.markdown("""
+    <div class="info-box">
+    <b>Análisis DIRECTO:</b> Usa la matriz original M sin transformaciones.<br>
+    • <b>Motricidad (M):</b> Suma de la fila = influencia que EJERCE la variable<br>
+    • <b>Dependencia (D):</b> Suma de la columna = influencia que RECIBE la variable<br>
+    • Valores en <b>escala original</b> (enteros pequeños, típicamente 0-100)
+    </div>
+    """, unsafe_allow_html=True)
     
     if st.session_state.matriz_procesada is not None:
-        df = st.session_state.matriz_procesada
+        M = st.session_state.M_original
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
-        
-        M = df.values.astype(float)
         n = M.shape[0]
         
-        st.info(f"📐 Matriz: {n}x{n} variables")
+        # Calcular análisis DIRECTO
+        motricidad_dir, dependencia_dir = calcular_motricidad_dependencia_directa(M)
+        clasificacion_dir, med_mot_dir, med_dep_dir = clasificar_variables_directas(motricidad_dir, dependencia_dir)
+        
+        df_directo = pd.DataFrame({
+            'Código': codigos,
+            'Variable': nombres,
+            'Motricidad': np.round(motricidad_dir, 2),
+            'Dependencia': np.round(dependencia_dir, 2),
+            'Clasificación': clasificacion_dir
+        })
+        df_directo['Ranking_M'] = df_directo['Motricidad'].rank(ascending=False).astype(int)
+        df_directo = df_directo.sort_values('Motricidad', ascending=False)
+        
+        st.session_state.resultados_directo = {
+            'df_resultados': df_directo,
+            'motricidad': motricidad_dir,
+            'dependencia': dependencia_dir,
+            'clasificacion': clasificacion_dir,
+            'med_mot': med_mot_dir,
+            'med_dep': med_dep_dir
+        }
+        
+        # Métricas
+        st.subheader("📈 Distribución de Variables (Análisis DIRECTO)")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total", n)
+        col2.metric("🔴 Motrices", sum(c == 'Motrices' for c in clasificacion_dir))
+        col3.metric("🔵 Enlace", sum(c == 'Enlace' for c in clasificacion_dir))
+        col4.metric("💧 Resultado", sum(c == 'Resultado' for c in clasificacion_dir))
+        col5.metric("🟠 Autónomas", sum(c == 'Autónomas' for c in clasificacion_dir))
+        
+        # Ranking DIRECTO
+        st.subheader("🏆 Ranking de Variables (DIRECTO)")
+        
+        def color_clasif_dir(val):
+            colors = {
+                'Motrices': 'background-color: #ffcccc',
+                'Enlace': 'background-color: #cce5ff',
+                'Resultado': 'background-color: #cceeff',
+                'Autónomas': 'background-color: #fff3cd'
+            }
+            return colors.get(val, '')
+        
+        st.dataframe(
+            df_directo.style.applymap(color_clasif_dir, subset=['Clasificación']),
+            use_container_width=True, height=400
+        )
+        
+        # Gráfico de subsistemas DIRECTO
+        st.subheader("🗺️ Plano de Subsistemas (DIRECTO)")
+        
+        fig_dir = crear_grafico_subsistemas(
+            df_directo, med_mot_dir, med_dep_dir, motricidad_dir, dependencia_dir,
+            titulo=f"Análisis DIRECTO - Subsistemas (Mediana M={med_mot_dir:.1f}, D={med_dep_dir:.1f})",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente
+        )
+        mostrar_grafico_con_descargas(fig_dir, "subsistemas_directo", "tab2")
+        
+        # Distribución
+        st.subheader("📊 Distribución por Cuadrantes (DIRECTO)")
+        fig_pie_dir = crear_grafico_distribucion_cuadrantes(clasificacion_dir, "Distribución DIRECTA")
+        mostrar_grafico_con_descargas(fig_pie_dir, "distribucion_directo", "tab2_pie")
+        
+        # Exportar CSV directo
+        st.subheader("📥 Exportar Análisis DIRECTO")
+        csv_directo = df_directo.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Ranking DIRECTO (CSV)",
+            csv_directo,
+            "ranking_DIRECTO.csv",
+            "text/csv",
+            key="csv_directo"
+        )
+        
+    else:
+        st.warning("⚠️ Primero carga una matriz en 'Datos'")
+
+# ============================================================
+# TAB 3: ANÁLISIS INDIRECTO
+# ============================================================
+with tab3:
+    st.header("📈 Análisis INDIRECTO (MIDI)")
+    
+    st.markdown("""
+    <div class="info-box">
+    <b>Análisis INDIRECTO:</b> Usa la matriz potenciada MIDI = M + αM² + α²M³ + ...<br>
+    • Revela <b>relaciones ocultas</b> y <b>estructurales</b> del sistema<br>
+    • Valores en <b>escala amplificada</b> (pueden ser millones)<br>
+    • Muestra cómo las influencias se <b>propagan</b> a través del sistema
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.session_state.matriz_procesada is not None:
+        M = st.session_state.M_original
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        n = M.shape[0]
         
         if K_auto:
             K_usado = detectar_convergencia(M)
-            st.success(f"🔍 K óptimo: **{K_usado}**")
+            st.success(f"🔍 K óptimo detectado: **{K_usado}**")
         else:
             K_usado = K_manual
         
+        # Calcular MIDI
         MIDI = calcular_midi(M, alpha=alpha, K=K_usado)
-        motricidad, dependencia = calcular_motricidad_dependencia(MIDI)
-        clasificacion, med_mot, med_dep = clasificar_variables(motricidad, dependencia)
+        motricidad_ind, dependencia_ind = calcular_motricidad_dependencia(MIDI)
+        clasificacion_ind, med_mot_ind, med_dep_ind = clasificar_variables(motricidad_ind, dependencia_ind)
         
-        df_resultados = pd.DataFrame({
+        df_indirecto = pd.DataFrame({
             'Código': codigos,
             'Variable': nombres,
-            'Motricidad': np.round(motricidad, 2),
-            'Dependencia': np.round(dependencia, 2),
-            'Clasificación': clasificacion
+            'Motricidad': np.round(motricidad_ind, 2),
+            'Dependencia': np.round(dependencia_ind, 2),
+            'Clasificación': clasificacion_ind
         })
-        df_resultados['Ranking'] = df_resultados['Motricidad'].rank(ascending=False).astype(int)
-        df_resultados = df_resultados.sort_values('Motricidad', ascending=False)
+        df_indirecto['Ranking_M'] = df_indirecto['Motricidad'].rank(ascending=False).astype(int)
+        df_indirecto = df_indirecto.sort_values('Motricidad', ascending=False)
         
-        st.session_state.resultados = {
-            'df_resultados': df_resultados,
+        st.session_state.resultados_indirecto = {
+            'df_resultados': df_indirecto,
             'MIDI': MIDI,
-            'motricidad': motricidad,
-            'dependencia': dependencia,
-            'clasificacion': clasificacion,
-            'med_mot': med_mot,
-            'med_dep': med_dep,
+            'motricidad': motricidad_ind,
+            'dependencia': dependencia_ind,
+            'clasificacion': clasificacion_ind,
+            'med_mot': med_mot_ind,
+            'med_dep': med_dep_ind,
             'alpha': alpha,
             'K': K_usado
         }
         
-        st.subheader("📈 Resumen")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total", len(nombres))
-        col2.metric("Determinantes", sum(c == 'Determinantes' for c in clasificacion))
-        col3.metric("Clave", sum(c == 'Clave' for c in clasificacion))
-        col4.metric("Resultado", sum(c == 'Variables resultado' for c in clasificacion))
+        # Métricas
+        st.subheader(f"📈 Distribución de Variables (INDIRECTO, α={alpha}, K={K_usado})")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total", n)
+        col2.metric("🔴 Determinantes", sum(c == 'Determinantes' for c in clasificacion_ind))
+        col3.metric("🔵 Clave", sum(c == 'Clave' for c in clasificacion_ind))
+        col4.metric("💧 Resultado", sum(c == 'Variables resultado' for c in clasificacion_ind))
+        col5.metric("🟠 Autónomas", sum(c == 'Autónomas' for c in clasificacion_ind))
         
-        st.subheader("🏆 Ranking de Variables")
+        # Ranking INDIRECTO
+        st.subheader("🏆 Ranking de Variables (INDIRECTO)")
         
-        def color_clasif(val):
+        def color_clasif_ind(val):
             colors = {
                 'Determinantes': 'background-color: #ffcccc',
                 'Clave': 'background-color: #cce5ff',
@@ -967,10 +1153,26 @@ with tab2:
             return colors.get(val, '')
         
         st.dataframe(
-            df_resultados.style.applymap(color_clasif, subset=['Clasificación']),
+            df_indirecto.style.applymap(color_clasif_ind, subset=['Clasificación']),
             use_container_width=True, height=400
         )
         
+        # Gráfico de subsistemas INDIRECTO
+        st.subheader("🗺️ Plano de Subsistemas (INDIRECTO)")
+        
+        fig_ind = crear_grafico_subsistemas(
+            df_indirecto, med_mot_ind, med_dep_ind, motricidad_ind, dependencia_ind,
+            titulo=f"Análisis INDIRECTO - Subsistemas (α={alpha}, K={K_usado})",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente
+        )
+        mostrar_grafico_con_descargas(fig_ind, "subsistemas_indirecto", "tab3")
+        
+        # Distribución
+        st.subheader("📊 Distribución por Cuadrantes (INDIRECTO)")
+        fig_pie_ind = crear_grafico_distribucion_cuadrantes(clasificacion_ind, "Distribución INDIRECTA")
+        mostrar_grafico_con_descargas(fig_pie_ind, "distribucion_indirecto", "tab3_pie")
+        
+        # Matriz MIDI
         st.subheader("🔢 Matriz MIDI")
         etiquetas = codigos if usar_codigos else [truncar_texto(n, 20) for n in nombres]
         fig_midi = go.Figure(data=go.Heatmap(
@@ -978,99 +1180,133 @@ with tab2:
             hovertemplate='%{x} → %{y}<br>Valor: %{z:.1f}<extra></extra>'
         ))
         fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
-        mostrar_grafico_con_descargas(fig_midi, "matriz_midi", "tab2")
+        mostrar_grafico_con_descargas(fig_midi, "matriz_midi", "tab3_midi")
+        
+        # Exportar
+        st.subheader("📥 Exportar Análisis INDIRECTO")
+        csv_indirecto = df_indirecto.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Ranking INDIRECTO (CSV)",
+            csv_indirecto,
+            "ranking_INDIRECTO.csv",
+            "text/csv",
+            key="csv_indirecto"
+        )
         
     else:
         st.warning("⚠️ Primero carga una matriz en 'Datos'")
 
 # ============================================================
-# TAB 3: SUBSISTEMAS
-# ============================================================
-with tab3:
-    st.header("📈 Gráfico de Subsistemas")
-    
-    if st.session_state.resultados is not None:
-        res = st.session_state.resultados
-        df_res = res['df_resultados'].copy()
-        nombres = st.session_state.nombres_variables
-        codigos = st.session_state.codigos_variables
-        
-        st.markdown("""
-        <div class="info-box">
-        🔴 <b>Determinantes:</b> Palancas de acción<br>
-        🔵 <b>Clave:</b> Nudo del sistema<br>
-        💧 <b>Resultado:</b> Indicadores<br>
-        🟠 <b>Autónomas:</b> Excluidas
-        </div>
-        """, unsafe_allow_html=True)
-        
-        color_map = {
-            'Determinantes': '#FF4444',
-            'Clave': '#1166CC',
-            'Variables resultado': '#66BBFF',
-            'Autónomas': '#FF9944'
-        }
-        
-        fig = go.Figure()
-        
-        for clasif, color in color_map.items():
-            mask = df_res['Clasificación'] == clasif
-            df_temp = df_res[mask]
-            if len(df_temp) > 0:
-                etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
-                # Hover siempre muestra nombre completo
-                hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_temp['Código'], df_temp['Variable'])]
-                
-                fig.add_trace(go.Scatter(
-                    x=df_temp['Dependencia'],
-                    y=df_temp['Motricidad'],
-                    mode='markers+text' if mostrar_etiquetas else 'markers',
-                    name=clasif,
-                    text=etiquetas_temp if mostrar_etiquetas else None,
-                    textposition='top center',
-                    textfont=dict(size=tamaño_fuente),
-                    marker=dict(size=12, color=color, line=dict(width=1, color='black')),
-                    hovertemplate="%{customdata}<br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>",
-                    customdata=hover_text
-                ))
-        
-        fig.add_hline(y=res['med_mot'], line_dash="dash", line_color="gray", opacity=0.5)
-        fig.add_vline(x=res['med_dep'], line_dash="dash", line_color="gray", opacity=0.5)
-        
-        max_mot = max(res['motricidad']) * 1.1
-        max_dep = max(res['dependencia']) * 1.1
-        
-        fig.add_annotation(x=res['med_dep']*0.3, y=max_mot*0.9, text="🔴 DETERMINANTES", showarrow=False, font=dict(color='red', size=14))
-        fig.add_annotation(x=max_dep*0.8, y=max_mot*0.9, text="🔵 CLAVE", showarrow=False, font=dict(color='blue', size=14))
-        fig.add_annotation(x=max_dep*0.8, y=res['med_mot']*0.3, text="💧 RESULTADO", showarrow=False, font=dict(color='#66BBFF', size=14))
-        fig.add_annotation(x=res['med_dep']*0.3, y=res['med_mot']*0.3, text="🟠 AUTÓNOMAS", showarrow=False, font=dict(color='orange', size=14))
-        
-        fig.update_layout(
-            title=f"Subsistemas MICMAC (α={res['alpha']}, K={res['K']})",
-            xaxis_title="Dependencia", yaxis_title="Motricidad", height=700
-        )
-        
-        mostrar_grafico_con_descargas(fig, "subsistemas", "tab3")
-        
-        # Tabla de referencia expandible
-        with st.expander("📋 Ver tabla de referencia de códigos", expanded=False):
-            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
-        
-        st.subheader("📊 Distribución por Cuadrantes")
-        fig_pie = crear_grafico_distribucion_cuadrantes(res['clasificacion'])
-        mostrar_grafico_con_descargas(fig_pie, "distribucion_cuadrantes", "tab3_pie")
-        
-    else:
-        st.warning("⚠️ Ejecuta primero el análisis")
-
-# ============================================================
-# TAB 4: EJE ESTRATÉGICO
+# TAB 4: COMPARACIÓN DIRECTO vs INDIRECTO
 # ============================================================
 with tab4:
+    st.header("🔄 Comparación: DIRECTO vs INDIRECTO")
+    
+    st.markdown("""
+    <div class="info-box">
+    <b>¿Por qué comparar?</b><br>
+    • El análisis <b>DIRECTO</b> muestra relaciones <b>inmediatas y visibles</b><br>
+    • El análisis <b>INDIRECTO</b> revela relaciones <b>ocultas y estructurales</b><br>
+    • Las variables que <b>cambian de cuadrante</b> son especialmente interesantes
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
+        
+        # Comparación de distribuciones
+        st.subheader("📊 Comparación de Distribuciones")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**DIRECTO**")
+            st.write(f"- 🔴 Motrices: {sum(c == 'Motrices' for c in res_dir['clasificacion'])}")
+            st.write(f"- 🔵 Enlace: {sum(c == 'Enlace' for c in res_dir['clasificacion'])}")
+            st.write(f"- 💧 Resultado: {sum(c == 'Resultado' for c in res_dir['clasificacion'])}")
+            st.write(f"- 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_dir['clasificacion'])}")
+        
+        with col2:
+            st.markdown("**INDIRECTO**")
+            st.write(f"- 🔴 Determinantes: {sum(c == 'Determinantes' for c in res_ind['clasificacion'])}")
+            st.write(f"- 🔵 Clave: {sum(c == 'Clave' for c in res_ind['clasificacion'])}")
+            st.write(f"- 💧 Resultado: {sum(c == 'Variables resultado' for c in res_ind['clasificacion'])}")
+            st.write(f"- 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_ind['clasificacion'])}")
+        
+        # Tabla de comparación
+        st.subheader("📋 Tabla Comparativa")
+        df_comp = comparar_directo_indirecto(res_dir['df_resultados'], res_ind['df_resultados'])
+        
+        # Resaltar cambios
+        n_cambios = df_comp['Cambio'].sum()
+        if n_cambios > 0:
+            st.warning(f"⚠️ **{n_cambios} variables** cambiaron de cuadrante entre análisis directo e indirecto")
+        else:
+            st.success("✅ Todas las variables mantienen su clasificación en ambos análisis")
+        
+        def highlight_cambio(row):
+            if row['Cambio']:
+                return ['background-color: #ffe6e6'] * len(row)
+            return [''] * len(row)
+        
+        st.dataframe(
+            df_comp.style.apply(highlight_cambio, axis=1),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Variables que cambiaron
+        if n_cambios > 0:
+            st.subheader("🔄 Variables que Cambiaron de Cuadrante")
+            df_cambios = df_comp[df_comp['Cambio']]
+            for _, row in df_cambios.iterrows():
+                st.markdown(f"- **{row['Código']}** ({row['Variable'][:40]}...): {row['Clasif_Directa']} → {row['Clasif_Indirecta']}")
+        
+        # Gráficos lado a lado
+        st.subheader("📈 Planos de Subsistemas Comparados")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_dir = crear_grafico_subsistemas(
+                res_dir['df_resultados'], res_dir['med_mot'], res_dir['med_dep'],
+                res_dir['motricidad'], res_dir['dependencia'],
+                titulo="DIRECTO",
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente-2
+            )
+            fig_dir.update_layout(height=500)
+            st.plotly_chart(fig_dir, use_container_width=True, key="comp_dir")
+        
+        with col2:
+            fig_ind = crear_grafico_subsistemas(
+                res_ind['df_resultados'], res_ind['med_mot'], res_ind['med_dep'],
+                res_ind['motricidad'], res_ind['dependencia'],
+                titulo="INDIRECTO",
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, tamaño_fuente=tamaño_fuente-2
+            )
+            fig_ind.update_layout(height=500)
+            st.plotly_chart(fig_ind, use_container_width=True, key="comp_ind")
+        
+        # Exportar comparación
+        csv_comp = df_comp.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Comparación (CSV)",
+            csv_comp,
+            "comparacion_directo_indirecto.csv",
+            "text/csv",
+            key="csv_comp"
+        )
+        
+    else:
+        st.warning("⚠️ Ejecuta primero los análisis DIRECTO e INDIRECTO")
+
+# ============================================================
+# TAB 5: EJE ESTRATÉGICO
+# ============================================================
+with tab5:
     st.header("🎯 Eje Estratégico")
     
-    if st.session_state.resultados is not None:
-        res = st.session_state.resultados
+    if st.session_state.resultados_indirecto is not None:
+        res = st.session_state.resultados_indirecto
         df_res = res['df_resultados'].copy()
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
@@ -1109,11 +1345,8 @@ with tab4:
             line=dict(color='red', dash='dash', width=2)
         ))
         
-        fig.update_layout(title="Eje Estratégico", height=600, xaxis_title="Dependencia", yaxis_title="Motricidad")
-        mostrar_grafico_con_descargas(fig, "eje_estrategico", "tab4")
-        
-        with st.expander("📋 Ver tabla de referencia de códigos", expanded=False):
-            st.dataframe(pd.DataFrame({'Código': codigos, 'Variable': nombres}), use_container_width=True)
+        fig.update_layout(title="Eje Estratégico (Análisis Indirecto)", height=600)
+        mostrar_grafico_con_descargas(fig, "eje_estrategico", "tab5")
         
         st.subheader("🏆 Top 10 Variables Estratégicas")
         top10 = df_res.nlargest(10, 'Valor_Estrategico')[
@@ -1125,59 +1358,52 @@ with tab4:
         st.warning("⚠️ Ejecuta primero el análisis")
 
 # ============================================================
-# TAB 5: ANÁLISIS AVANZADO
+# TAB 6: ANÁLISIS AVANZADO
 # ============================================================
-with tab5:
-    st.header("🔬 Análisis Avanzado de Inteligencia Estratégica")
+with tab6:
+    st.header("🔬 Análisis Avanzado")
     
-    if st.session_state.resultados is not None and st.session_state.M_original is not None:
-        res = st.session_state.resultados
+    if st.session_state.resultados_indirecto is not None and st.session_state.M_original is not None:
+        res = st.session_state.resultados_indirecto
         M = st.session_state.M_original
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
         
         st.subheader("🕸️ Red de Influencias Fuertes")
         umbral_red = st.slider("Umbral de intensidad", min_value=1, max_value=3, value=2, key="umbral_red")
-        
         fig_red = crear_grafico_red_influencias(M, nombres, codigos, umbral=umbral_red, usar_codigos=usar_codigos)
-        mostrar_grafico_con_descargas(fig_red, "red_influencias", "tab5_red")
+        mostrar_grafico_con_descargas(fig_red, "red_influencias", "tab6_red")
         
         st.divider()
         
         st.subheader("📊 Comparativo Motricidad vs Dependencia")
         fig_comp = crear_grafico_comparativo_barras(res['df_resultados'], top_n=15)
-        mostrar_grafico_con_descargas(fig_comp, "comparativo_mot_dep", "tab5_comp")
+        mostrar_grafico_con_descargas(fig_comp, "comparativo_mot_dep", "tab6_comp")
         
         st.divider()
         
-        st.subheader("📈 Estabilidad del Ranking según Profundidad K")
+        st.subheader("📈 Estabilidad del Ranking según K")
         fig_estab = crear_grafico_estabilidad(M, nombres, codigos, alpha=res['alpha'], usar_codigos=usar_codigos)
-        mostrar_grafico_con_descargas(fig_estab, "estabilidad_ranking", "tab5_estab")
+        mostrar_grafico_con_descargas(fig_estab, "estabilidad_ranking", "tab6_estab")
         
         st.divider()
         
         st.subheader("💪 Top Relaciones de Influencia")
         fig_rel = crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos=usar_codigos)
-        mostrar_grafico_con_descargas(fig_rel, "relaciones_fuertes", "tab5_rel")
-        
-        st.divider()
-        
-        st.subheader("⚠️ Índice de Inestabilidad")
-        st.markdown("Variables con alto índice (Motricidad × Dependencia) son **amplificadores de cambios**.")
-        fig_inest = crear_grafico_inestabilidad(res['df_resultados'])
-        mostrar_grafico_con_descargas(fig_inest, "indice_inestabilidad", "tab5_inest")
+        mostrar_grafico_con_descargas(fig_rel, "relaciones_fuertes", "tab6_rel")
         
     else:
         st.warning("⚠️ Ejecuta primero el análisis")
 
 # ============================================================
-# TAB 6: INFORME
+# TAB 7: INFORME
 # ============================================================
-with tab6:
+with tab7:
     st.header("📑 Generación de Informe")
     
-    if st.session_state.resultados is not None:
-        res = st.session_state.resultados
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
         M = st.session_state.M_original
@@ -1191,15 +1417,17 @@ with tab6:
             st.markdown("""
             **Incluye:**
             - Resumen ejecutivo
-            - Ranking de variables
-            - Variables por cuadrante
+            - Ranking DIRECTO (valores originales)
+            - Ranking INDIRECTO (valores MIDI)
+            - Comparación Directo vs Indirecto
+            - Variables por cuadrante (ambos análisis)
+            - Matriz MID Original
             - Matriz MIDI
             - Relaciones fuertes
-            - Análisis estratégico
             - Diccionario de códigos
             """)
             
-            buffer = generar_informe_excel(res, nombres, codigos, M, nombre_proyecto)
+            buffer = generar_informe_excel(res_dir, res_ind, nombres, codigos, M, nombre_proyecto)
             st.download_button(
                 label="📥 Descargar Informe Excel Completo",
                 data=buffer,
@@ -1215,67 +1443,88 @@ with tab6:
             
             **Parámetros:**
             - Variables: {len(nombres)}
-            - Alpha (α): {res['alpha']}
-            - K: {res['K']}
+            - Alpha (α): {res_ind['alpha']}
+            - K: {res_ind['K']}
             
-            **Distribución:**
-            - 🔴 Determinantes: {sum(c == 'Determinantes' for c in res['clasificacion'])}
-            - 🔵 Clave: {sum(c == 'Clave' for c in res['clasificacion'])}
-            - 💧 Resultado: {sum(c == 'Variables resultado' for c in res['clasificacion'])}
-            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res['clasificacion'])}
+            **DIRECTO:**
+            - 🔴 Motrices: {sum(c == 'Motrices' for c in res_dir['clasificacion'])}
+            - 🔵 Enlace: {sum(c == 'Enlace' for c in res_dir['clasificacion'])}
+            - 💧 Resultado: {sum(c == 'Resultado' for c in res_dir['clasificacion'])}
+            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_dir['clasificacion'])}
+            
+            **INDIRECTO:**
+            - 🔴 Determinantes: {sum(c == 'Determinantes' for c in res_ind['clasificacion'])}
+            - 🔵 Clave: {sum(c == 'Clave' for c in res_ind['clasificacion'])}
+            - 💧 Resultado: {sum(c == 'Variables resultado' for c in res_ind['clasificacion'])}
+            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_ind['clasificacion'])}
             """)
         
     else:
-        st.warning("⚠️ Ejecuta primero el análisis")
+        st.warning("⚠️ Ejecuta primero ambos análisis")
 
 # ============================================================
-# TAB 7: EXPORTAR
+# TAB 8: EXPORTAR
 # ============================================================
-with tab7:
+with tab8:
     st.header("📥 Exportar Resultados Individuales")
     
-    if st.session_state.resultados is not None:
-        res = st.session_state.resultados
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
         codigos = st.session_state.codigos_variables
         nombres = st.session_state.nombres_variables
+        M = st.session_state.M_original
         
-        st.subheader("Exportaciones CSV")
+        st.subheader("📋 Exportaciones CSV")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Análisis DIRECTO:**")
+            csv_dir = res_dir['df_resultados'].to_csv(index=False)
+            st.download_button("📥 Ranking DIRECTO (CSV)", csv_dir, "ranking_DIRECTO.csv", "text/csv", key="exp_dir")
+        
+        with col2:
+            st.markdown("**Análisis INDIRECTO:**")
+            csv_ind = res_ind['df_resultados'].to_csv(index=False)
+            st.download_button("📥 Ranking INDIRECTO (CSV)", csv_ind, "ranking_INDIRECTO.csv", "text/csv", key="exp_ind")
+        
+        st.divider()
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            csv_ranking = res['df_resultados'].to_csv(index=False)
-            st.download_button("📥 Ranking (CSV)", csv_ranking, "ranking_variables.csv", "text/csv")
+            st.markdown("**Matriz MID Original:**")
+            df_mid = pd.DataFrame(M, index=codigos, columns=codigos)
+            csv_mid = df_mid.to_csv()
+            st.download_button("📥 Matriz MID (CSV)", csv_mid, "matriz_MID.csv", "text/csv", key="exp_mid")
         
         with col2:
-            df_midi = pd.DataFrame(res['MIDI'], index=codigos, columns=codigos)
+            st.markdown("**Matriz MIDI:**")
+            df_midi = pd.DataFrame(res_ind['MIDI'], index=codigos, columns=codigos)
             csv_midi = df_midi.to_csv()
-            st.download_button("📥 Matriz MIDI (CSV)", csv_midi, "matriz_midi.csv", "text/csv")
+            st.download_button("📥 Matriz MIDI (CSV)", csv_midi, "matriz_MIDI.csv", "text/csv", key="exp_midi")
         
         with col3:
+            st.markdown("**Diccionario:**")
             df_dict = pd.DataFrame({'Código': codigos, 'Variable': nombres})
             csv_dict = df_dict.to_csv(index=False)
-            st.download_button("📥 Diccionario (CSV)", csv_dict, "diccionario_variables.csv", "text/csv")
+            st.download_button("📥 Diccionario (CSV)", csv_dict, "diccionario.csv", "text/csv", key="exp_dict")
         
         st.divider()
         
-        st.subheader("💡 Cómo descargar gráficos como imagen")
-        st.markdown("""
-        **Opción 1 - Botón de cámara:**
-        1. Pasa el mouse sobre cualquier gráfico
-        2. Haz clic en el ícono de **📷 cámara** (esquina superior derecha)
-        
-        **Opción 2 - Botones de descarga:**
-        - Cada gráfico tiene botones para HTML (interactivo) y SVG (vector)
-        """)
+        st.markdown("**Comparación Directo vs Indirecto:**")
+        df_comp = comparar_directo_indirecto(res_dir['df_resultados'], res_ind['df_resultados'])
+        csv_comp = df_comp.to_csv(index=False)
+        st.download_button("📥 Comparación Dir-Ind (CSV)", csv_comp, "comparacion_dir_ind.csv", "text/csv", key="exp_comp")
         
     else:
-        st.warning("⚠️ Ejecuta primero el análisis")
+        st.warning("⚠️ Ejecuta primero los análisis")
 
 # Footer
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.3</b> | Metodología Michel Godet (1990) | JETLEX Strategic Consulting | Martin Pratto Chiarella-2025
+<b>MICMAC PRO v5.4</b> | Análisis DIRECTO e INDIRECTO | Metodología Michel Godet (1990) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella | 2025
 </div>
 """, unsafe_allow_html=True)

@@ -689,17 +689,18 @@ def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia,
     for _, row in top5_dep.iterrows():
         stats_text += f"{row['Código']}: D={row['Dependencia']:.0f}<br>"
     
-    # Subtítulo con metadata
-    subtitulo = f"Análisis directo · Matriz MID {n_vars}×{n_vars}"
+    # Subtítulo con metadata (más compacto)
+    subtitulo = f"Matriz {n_vars}×{n_vars}"
     if fill_rate > 0:
-        subtitulo += f" · Fill rate: {fill_rate:.1f}%"
-    subtitulo += f" · Promedios: M={med_mot:.1f}, D={med_dep:.1f}"
+        subtitulo += f" · Fill: {fill_rate:.1f}%"
+    subtitulo += f" · Media: M={med_mot:.1f}, D={med_dep:.1f}"
     
     fig.update_layout(
         title=dict(
-            text=f"<b>PLANO MOTRICIDAD-DEPENDENCIA: CLASIFICACIÓN DE {n_vars} VARIABLES MICMAC</b><br><sup>{subtitulo}</sup>",
-            x=0.5,
-            font=dict(size=16)
+            text=f"<b>PLANO MOTRICIDAD-DEPENDENCIA</b><br><sup>Clasificación de {n_vars} variables MICMAC · {subtitulo}</sup>",
+            x=0.45,  # Centrado considerando el margen derecho
+            xanchor='center',
+            font=dict(size=15)
         ),
         xaxis=dict(
             title=dict(text="<b>DEPENDENCIA →</b>", font=dict(size=12)),

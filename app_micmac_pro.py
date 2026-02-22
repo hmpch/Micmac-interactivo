@@ -1848,12 +1848,16 @@ with tab6:
         
         # === GRAFO DE INFLUENCIAS (estilo LIPSOR) ===
         st.subheader("🕸️ Grafo de Influencias Potenciales Directas")
-        st.markdown("""
+        
+        # Calcular estadísticas de relaciones
+        n_val3 = (M == 3).sum()
+        n_val2 = (M == 2).sum()
+        n_val1 = (M == 1).sum()
+        
+        st.markdown(f"""
         <div class="info-box">
-        Visualización de las relaciones más fuertes entre variables. 
-        <span style="color:red"><b>🔴 Rojo = Fuerte (3)</b></span> | 
-        <span style="color:blue"><b>🔵 Azul = Moderada (2)</b></span> | 
-        <span style="color:gray">⚫ Gris = Débil (1)</span>
+        <b>Tu matriz tiene:</b> 🔴 <b>{n_val3}</b> relaciones fuertes (3) | 🔵 <b>{n_val2}</b> moderadas (2) | ⚫ <b>{n_val1}</b> débiles (1)<br>
+        <i>Ajusta el slider para ver más o menos conexiones. Para ver azules, sube a más de {n_val3}.</i>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1861,10 +1865,10 @@ with tab6:
         with col2:
             top_n_grafo = st.slider(
                 "Nº de relaciones a mostrar", 
-                min_value=10, max_value=100, value=30, step=5,
-                help="Muestra solo las N relaciones más fuertes para mejor legibilidad"
+                min_value=20, max_value=300, value=50, step=10,
+                help="Tu matriz tiene 151 relaciones fuertes (3), 191 moderadas (2) y 106 débiles (1). Sube a 200+ para ver los colores azul y gris."
             )
-            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=True)
+            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=False)
         
         fig_grafo = crear_grafo_influencias(M, codigos, nombres, top_n=top_n_grafo, mostrar_valores=mostrar_valores_grafo)
         st.plotly_chart(fig_grafo, use_container_width=True, key="grafo_inf")
@@ -2027,6 +2031,6 @@ with tab8:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella | 2025
+<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella 2025
 </div>
 """, unsafe_allow_html=True)

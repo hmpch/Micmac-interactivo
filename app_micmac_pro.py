@@ -2,7 +2,7 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting by Martín Pratto Chiarella
+Autor: JETLEX Strategic Consulting by Horacio Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
 Versión: 5.5 - Metodología canónica Godet (umbral = MEDIA ARITMÉTICA)
 """
@@ -1031,141 +1031,151 @@ def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motrici
     
     return fig
 
-def crear_grafo_influencias(M, codigos, nombres, umbral_pct=20, mostrar_valores=True):
+def crear_grafo_influencias(M, codigos, nombres, top_n=30, mostrar_valores=True):
     """
-    Crea grafo de influencias estilo LIPSOR
-    umbral_pct: porcentaje mínimo del valor máximo para mostrar conexión
+    Crea grafo de influencias estilo LIPSOR - VERSIÓN MEJORADA
+    Solo muestra las TOP N conexiones más fuertes para mejor legibilidad
     """
     import numpy as np
     
     n = len(codigos)
     
-    # Calcular umbral basado en percentil
-    valores_no_cero = M[M > 0]
-    if len(valores_no_cero) == 0:
-        umbral = 0
-    else:
-        umbral = np.percentile(valores_no_cero, umbral_pct)
+    # Extraer TODAS las relaciones con su valor
+    relaciones = []
+    for i in range(n):
+        for j in range(n):
+            if i != j and M[i, j] > 0:
+                relaciones.append({
+                    'origen': i,
+                    'destino': j,
+                    'valor': M[i, j],
+                    'cod_origen': codigos[i],
+                    'cod_destino': codigos[j]
+                })
     
-    max_val = M.max()
+    # Ordenar por valor y tomar solo las TOP N
+    relaciones = sorted(relaciones, key=lambda x: x['valor'], reverse=True)[:top_n]
     
-    # Posiciones de nodos en círculo
-    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    pos_x = np.cos(angles) * 10
-    pos_y = np.sin(angles) * 10
+    if len(relaciones) == 0:
+        fig = go.Figure()
+        fig.add_annotation(text="No hay relaciones para mostrar", x=0.5, y=0.5, showarrow=False)
+        return fig
+    
+    # Valores para escala de colores
+    valores = [r['valor'] for r in relaciones]
+    max_val = max(valores)
+    min_val = min(valores)
+    rango = max_val - min_val if max_val > min_val else 1
+    
+    # Identificar qué nodos participan en las relaciones mostradas
+    nodos_activos = set()
+    for r in relaciones:
+        nodos_activos.add(r['origen'])
+        nodos_activos.add(r['destino'])
+    
+    nodos_activos = list(nodos_activos)
+    n_activos = len(nodos_activos)
+    
+    # Posiciones de nodos en círculo más grande
+    angles = np.linspace(0, 2 * np.pi, n_activos, endpoint=False)
+    # Rotar para que el primero esté arriba
+    angles = angles - np.pi/2
+    
+    pos_x = {nodos_activos[i]: np.cos(angles[i]) * 12 for i in range(n_activos)}
+    pos_y = {nodos_activos[i]: np.sin(angles[i]) * 12 for i in range(n_activos)}
     
     fig = go.Figure()
     
-    # Clasificar y dibujar aristas por intensidad
-    for i in range(n):
-        for j in range(n):
-            if i != j and M[i, j] > umbral:
-                valor = M[i, j]
-                ratio = valor / max_val if max_val > 0 else 0
-                
-                # Determinar estilo según intensidad
-                if ratio > 0.8:  # Strongest
-                    color = 'red'
-                    width = 3
-                    dash = 'solid'
-                elif ratio > 0.6:  # Relatively strong
-                    color = 'blue'
-                    width = 2.5
-                    dash = 'solid'
-                elif ratio > 0.4:  # Moderate
-                    color = 'lightblue'
-                    width = 2
-                    dash = 'solid'
-                elif ratio > 0.2:  # Weak
-                    color = 'gray'
-                    width = 1
-                    dash = 'solid'
-                else:  # Weakest
-                    color = 'lightgray'
-                    width = 0.5
-                    dash = 'dot'
-                
-                # Calcular punto medio para flecha
-                mid_x = (pos_x[i] + pos_x[j]) / 2
-                mid_y = (pos_y[i] + pos_y[j]) / 2
-                
-                # Dibujar línea
-                fig.add_trace(go.Scatter(
-                    x=[pos_x[i], pos_x[j]],
-                    y=[pos_y[i], pos_y[j]],
-                    mode='lines',
-                    line=dict(color=color, width=width, dash=dash),
-                    hoverinfo='skip',
-                    showlegend=False
-                ))
-                
-                # Agregar valor en el medio si está habilitado
-                if mostrar_valores and ratio > 0.3:
-                    fig.add_annotation(
-                        x=mid_x, y=mid_y,
-                        text=f"{valor:.0f}",
-                        showarrow=False,
-                        font=dict(size=7, color='gray'),
-                        bgcolor='white',
-                        opacity=0.7
-                    )
+    # Dibujar aristas (de menor a mayor para que las fuertes queden encima)
+    for r in reversed(relaciones):
+        valor = r['valor']
+        ratio = (valor - min_val) / rango if rango > 0 else 0.5
+        
+        # Clasificación por intensidad (basada en posición en el ranking)
+        if valor == 3:  # Influencia fuerte (valor máximo en escala MICMAC)
+            color = 'red'
+            width = 3
+        elif valor >= 2:  # Influencia moderada-fuerte
+            color = 'blue'
+            width = 2
+        else:  # Influencia débil
+            color = 'gray'
+            width = 1
+        
+        i, j = r['origen'], r['destino']
+        
+        # Dibujar línea
+        fig.add_trace(go.Scatter(
+            x=[pos_x[i], pos_x[j]],
+            y=[pos_y[i], pos_y[j]],
+            mode='lines',
+            line=dict(color=color, width=width),
+            hoverinfo='text',
+            hovertext=f"{codigos[i]} → {codigos[j]}: {valor:.0f}",
+            showlegend=False,
+            opacity=0.7
+        ))
+        
+        # Mostrar valor en el medio si está habilitado
+        if mostrar_valores:
+            mid_x = (pos_x[i] + pos_x[j]) / 2
+            mid_y = (pos_y[i] + pos_y[j]) / 2
+            fig.add_annotation(
+                x=mid_x, y=mid_y,
+                text=f"{valor:.0f}",
+                showarrow=False,
+                font=dict(size=8, color='black'),
+                bgcolor='rgba(255,255,255,0.8)',
+                borderpad=2
+            )
+    
+    # Calcular motricidad para tamaño de nodos
+    motricidad = M.sum(axis=1)
+    max_mot = motricidad.max() if motricidad.max() > 0 else 1
     
     # Dibujar nodos
-    # Calcular tamaño basado en motricidad
-    motricidad = M.sum(axis=1)
-    node_sizes = 20 + (motricidad / max(motricidad.max(), 1)) * 30
+    node_x = [pos_x[i] for i in nodos_activos]
+    node_y = [pos_y[i] for i in nodos_activos]
+    node_text = [codigos[i] for i in nodos_activos]
+    node_sizes = [30 + (motricidad[i] / max_mot) * 25 for i in nodos_activos]
+    node_hover = [f"<b>{codigos[i]}</b><br>{nombres[i]}<br>Motricidad: {motricidad[i]:.0f}" 
+                  for i in nodos_activos]
     
     fig.add_trace(go.Scatter(
-        x=pos_x,
-        y=pos_y,
+        x=node_x,
+        y=node_y,
         mode='markers+text',
         marker=dict(
             size=node_sizes,
             color='white',
-            line=dict(color='black', width=2)
+            line=dict(color='#333', width=2)
         ),
-        text=codigos,
+        text=node_text,
         textposition='middle center',
-        textfont=dict(size=9, color='black'),
-        hovertext=[f"<b>{c}</b><br>{n}<br>Motricidad: {m:.0f}" 
-                   for c, n, m in zip(codigos, nombres, motricidad)],
+        textfont=dict(size=10, color='black', family='Arial Black'),
+        hovertext=node_hover,
         hoverinfo='text',
         showlegend=False
     ))
     
-    # Leyenda de intensidades
-    leyenda_y = 0.98
-    intensidades = [
-        ('red', 'solid', 'Strongest influences'),
-        ('blue', 'solid', 'Relatively strong'),
-        ('lightblue', 'solid', 'Moderate influences'),
-        ('gray', 'solid', 'Weak influences'),
-        ('lightgray', 'dot', 'Weakest influences')
-    ]
-    
-    for i, (color, dash, texto) in enumerate(intensidades):
-        fig.add_annotation(
-            x=0.02, y=leyenda_y - i*0.04,
-            xref='paper', yref='paper',
-            text=f"<span style='color:{color}'>━━</span> {texto}",
-            showarrow=False,
-            font=dict(size=9),
-            align='left',
-            xanchor='left'
-        )
+    # Contar relaciones por tipo para la leyenda
+    n_fuertes = sum(1 for r in relaciones if r['valor'] == 3)
+    n_moderadas = sum(1 for r in relaciones if r['valor'] == 2)
+    n_debiles = sum(1 for r in relaciones if r['valor'] < 2)
     
     fig.update_layout(
         title=dict(
-            text="<b>GRAFO DE INFLUENCIAS POTENCIALES DIRECTAS</b>",
+            text=f"<b>GRAFO DE INFLUENCIAS POTENCIALES DIRECTAS</b><br><sup>Top {len(relaciones)} relaciones más fuertes | 🔴 Fuerte (3): {n_fuertes} | 🔵 Moderada (2): {n_moderadas} | ⚫ Débil (1): {n_debiles}</sup>",
             x=0.5,
-            xanchor='center'
+            xanchor='center',
+            font=dict(size=14)
         ),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-15, 15]),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-15, 15]),
-        height=700,
-        width=900,
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-16, 16]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-16, 16]),
+        height=750,
         plot_bgcolor='white',
-        paper_bgcolor='white'
+        paper_bgcolor='white',
+        margin=dict(l=20, r=20, t=80, b=20)
     )
     
     return fig
@@ -1840,25 +1850,23 @@ with tab6:
         st.subheader("🕸️ Grafo de Influencias Potenciales Directas")
         st.markdown("""
         <div class="info-box">
-        Visualización de la red de influencias entre variables. El grosor y color de las líneas 
-        indica la intensidad de la influencia:
-        <span style="color:red"><b>━━ Muy fuerte</b></span> | 
-        <span style="color:blue"><b>━━ Fuerte</b></span> | 
-        <span style="color:lightblue">━━ Moderada</span> | 
-        <span style="color:gray">━━ Débil</span>
+        Visualización de las relaciones más fuertes entre variables. 
+        <span style="color:red"><b>🔴 Rojo = Fuerte (3)</b></span> | 
+        <span style="color:blue"><b>🔵 Azul = Moderada (2)</b></span> | 
+        <span style="color:gray">⚫ Gris = Débil (1)</span>
         </div>
         """, unsafe_allow_html=True)
         
         col1, col2 = st.columns([3, 1])
         with col2:
-            umbral_grafo = st.slider(
-                "Umbral de visualización (%)", 
-                min_value=0, max_value=80, value=30,
-                help="Porcentaje mínimo del valor máximo para mostrar una conexión"
+            top_n_grafo = st.slider(
+                "Nº de relaciones a mostrar", 
+                min_value=10, max_value=100, value=30, step=5,
+                help="Muestra solo las N relaciones más fuertes para mejor legibilidad"
             )
-            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=False)
+            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=True)
         
-        fig_grafo = crear_grafo_influencias(M, codigos, nombres, umbral_pct=umbral_grafo, mostrar_valores=mostrar_valores_grafo)
+        fig_grafo = crear_grafo_influencias(M, codigos, nombres, top_n=top_n_grafo, mostrar_valores=mostrar_valores_grafo)
         st.plotly_chart(fig_grafo, use_container_width=True, key="grafo_inf")
         
         st.divider()

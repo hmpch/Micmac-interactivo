@@ -921,6 +921,255 @@ def crear_grafico_inestabilidad(df_resultados):
     
     return fig
 
+def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motricidad'):
+    """
+    Crea gráfico de desplazamiento de ranking estilo LIPSOR
+    Muestra cómo cambian las posiciones entre análisis directo e indirecto
+    tipo: 'Motricidad' o 'Dependencia'
+    """
+    # Calcular rankings
+    df_dir = df_directo.copy()
+    df_ind = df_indirecto.copy()
+    
+    df_dir['Rank_Dir'] = df_dir[tipo].rank(ascending=False).astype(int)
+    df_ind['Rank_Ind'] = df_ind[tipo].rank(ascending=False).astype(int)
+    
+    # Merge para comparar
+    df_comp = pd.merge(
+        df_dir[['Código', 'Variable', 'Rank_Dir']],
+        df_ind[['Código', 'Rank_Ind']],
+        on='Código'
+    )
+    
+    # Calcular cambio (positivo = subió en ranking, negativo = bajó)
+    df_comp['Cambio'] = df_comp['Rank_Dir'] - df_comp['Rank_Ind']
+    
+    # Ordenar por ranking directo
+    df_comp = df_comp.sort_values('Rank_Dir')
+    
+    n = len(df_comp)
+    
+    fig = go.Figure()
+    
+    # Dibujar líneas de conexión
+    for _, row in df_comp.iterrows():
+        # Color según si subió (verde) o bajó (rojo)
+        if row['Cambio'] > 0:
+            color = 'green'
+            width = min(1 + abs(row['Cambio']) * 0.3, 4)
+        elif row['Cambio'] < 0:
+            color = 'red'
+            width = min(1 + abs(row['Cambio']) * 0.3, 4)
+        else:
+            color = 'gray'
+            width = 1
+        
+        fig.add_trace(go.Scatter(
+            x=[0, 1],
+            y=[row['Rank_Dir'], row['Rank_Ind']],
+            mode='lines',
+            line=dict(color=color, width=width),
+            hoverinfo='skip',
+            showlegend=False
+        ))
+    
+    # Agregar puntos y etiquetas lado izquierdo (Directo)
+    fig.add_trace(go.Scatter(
+        x=[0] * n,
+        y=df_comp['Rank_Dir'],
+        mode='markers+text',
+        marker=dict(size=8, color='#1E3A8A'),
+        text=df_comp['Código'],
+        textposition='middle left',
+        textfont=dict(size=9),
+        name='Directo',
+        hovertemplate='<b>%{text}</b><br>Rank Directo: %{y}<extra></extra>'
+    ))
+    
+    # Agregar puntos y etiquetas lado derecho (Indirecto)
+    fig.add_trace(go.Scatter(
+        x=[1] * n,
+        y=df_comp['Rank_Ind'],
+        mode='markers+text',
+        marker=dict(size=8, color='#DC2626'),
+        text=df_comp['Código'],
+        textposition='middle right',
+        textfont=dict(size=9),
+        name='Indirecto',
+        hovertemplate='<b>%{text}</b><br>Rank Indirecto: %{y}<extra></extra>'
+    ))
+    
+    # Configurar layout
+    fig.update_layout(
+        title=dict(
+            text=f"<b>DESPLAZAMIENTO DE RANKING - {tipo.upper()}</b><br><sup>Directo → Indirecto | Verde=Sube, Rojo=Baja</sup>",
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(
+            tickvals=[0, 1],
+            ticktext=['<b>DIRECTO</b>', '<b>INDIRECTO</b>'],
+            range=[-0.3, 1.3],
+            showgrid=False
+        ),
+        yaxis=dict(
+            title='Ranking',
+            autorange='reversed',  # Rank 1 arriba
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)'
+        ),
+        height=max(500, n * 18),
+        showlegend=False,
+        plot_bgcolor='#FFFEF0',
+        paper_bgcolor='white'
+    )
+    
+    # Agregar leyenda manual
+    fig.add_annotation(x=0.5, y=-0.08, xref='paper', yref='paper',
+                      text="🟢 Variable sube en ranking indirecto | 🔴 Variable baja en ranking indirecto",
+                      showarrow=False, font=dict(size=10))
+    
+    return fig
+
+def crear_grafo_influencias(M, codigos, nombres, umbral_pct=20, mostrar_valores=True):
+    """
+    Crea grafo de influencias estilo LIPSOR
+    umbral_pct: porcentaje mínimo del valor máximo para mostrar conexión
+    """
+    import numpy as np
+    
+    n = len(codigos)
+    
+    # Calcular umbral basado en percentil
+    valores_no_cero = M[M > 0]
+    if len(valores_no_cero) == 0:
+        umbral = 0
+    else:
+        umbral = np.percentile(valores_no_cero, umbral_pct)
+    
+    max_val = M.max()
+    
+    # Posiciones de nodos en círculo
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    pos_x = np.cos(angles) * 10
+    pos_y = np.sin(angles) * 10
+    
+    fig = go.Figure()
+    
+    # Clasificar y dibujar aristas por intensidad
+    for i in range(n):
+        for j in range(n):
+            if i != j and M[i, j] > umbral:
+                valor = M[i, j]
+                ratio = valor / max_val if max_val > 0 else 0
+                
+                # Determinar estilo según intensidad
+                if ratio > 0.8:  # Strongest
+                    color = 'red'
+                    width = 3
+                    dash = 'solid'
+                elif ratio > 0.6:  # Relatively strong
+                    color = 'blue'
+                    width = 2.5
+                    dash = 'solid'
+                elif ratio > 0.4:  # Moderate
+                    color = 'lightblue'
+                    width = 2
+                    dash = 'solid'
+                elif ratio > 0.2:  # Weak
+                    color = 'gray'
+                    width = 1
+                    dash = 'solid'
+                else:  # Weakest
+                    color = 'lightgray'
+                    width = 0.5
+                    dash = 'dot'
+                
+                # Calcular punto medio para flecha
+                mid_x = (pos_x[i] + pos_x[j]) / 2
+                mid_y = (pos_y[i] + pos_y[j]) / 2
+                
+                # Dibujar línea
+                fig.add_trace(go.Scatter(
+                    x=[pos_x[i], pos_x[j]],
+                    y=[pos_y[i], pos_y[j]],
+                    mode='lines',
+                    line=dict(color=color, width=width, dash=dash),
+                    hoverinfo='skip',
+                    showlegend=False
+                ))
+                
+                # Agregar valor en el medio si está habilitado
+                if mostrar_valores and ratio > 0.3:
+                    fig.add_annotation(
+                        x=mid_x, y=mid_y,
+                        text=f"{valor:.0f}",
+                        showarrow=False,
+                        font=dict(size=7, color='gray'),
+                        bgcolor='white',
+                        opacity=0.7
+                    )
+    
+    # Dibujar nodos
+    # Calcular tamaño basado en motricidad
+    motricidad = M.sum(axis=1)
+    node_sizes = 20 + (motricidad / max(motricidad.max(), 1)) * 30
+    
+    fig.add_trace(go.Scatter(
+        x=pos_x,
+        y=pos_y,
+        mode='markers+text',
+        marker=dict(
+            size=node_sizes,
+            color='white',
+            line=dict(color='black', width=2)
+        ),
+        text=codigos,
+        textposition='middle center',
+        textfont=dict(size=9, color='black'),
+        hovertext=[f"<b>{c}</b><br>{n}<br>Motricidad: {m:.0f}" 
+                   for c, n, m in zip(codigos, nombres, motricidad)],
+        hoverinfo='text',
+        showlegend=False
+    ))
+    
+    # Leyenda de intensidades
+    leyenda_y = 0.98
+    intensidades = [
+        ('red', 'solid', 'Strongest influences'),
+        ('blue', 'solid', 'Relatively strong'),
+        ('lightblue', 'solid', 'Moderate influences'),
+        ('gray', 'solid', 'Weak influences'),
+        ('lightgray', 'dot', 'Weakest influences')
+    ]
+    
+    for i, (color, dash, texto) in enumerate(intensidades):
+        fig.add_annotation(
+            x=0.02, y=leyenda_y - i*0.04,
+            xref='paper', yref='paper',
+            text=f"<span style='color:{color}'>━━</span> {texto}",
+            showarrow=False,
+            font=dict(size=9),
+            align='left',
+            xanchor='left'
+        )
+    
+    fig.update_layout(
+        title=dict(
+            text="<b>GRAFO DE INFLUENCIAS POTENCIALES DIRECTAS</b>",
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-15, 15]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-15, 15]),
+        height=700,
+        width=900,
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
+    
+    return fig
+
 def crear_grafico_comparativo_barras(df_resultados, top_n=15):
     """Gráfico de barras comparativo Motricidad vs Dependencia"""
     df = df_resultados.nlargest(top_n, 'Motricidad').copy()
@@ -1481,6 +1730,39 @@ with tab4:
             key="csv_comp"
         )
         
+        st.divider()
+        
+        # === GRÁFICOS DE DESPLAZAMIENTO DE RANKING (estilo LIPSOR) ===
+        st.subheader("📊 Desplazamiento de Rankings (Directo → Indirecto)")
+        st.markdown("""
+        <div class="info-box">
+        Estos gráficos muestran cómo cambia la posición de cada variable al pasar del análisis 
+        <b>directo</b> al <b>indirecto</b>. Las líneas <span style="color:green"><b>verdes</b></span> 
+        indican variables que <b>suben</b> en el ranking indirecto, las <span style="color:red"><b>rojas</b></span> 
+        indican que <b>bajan</b>.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Ranking por MOTRICIDAD**")
+            fig_desp_mot = crear_grafico_desplazamiento_ranking(
+                res_dir['df_resultados'], 
+                res_ind['df_resultados'], 
+                tipo='Motricidad'
+            )
+            st.plotly_chart(fig_desp_mot, use_container_width=True, key="desp_mot")
+        
+        with col2:
+            st.markdown("**Ranking por DEPENDENCIA**")
+            fig_desp_dep = crear_grafico_desplazamiento_ranking(
+                res_dir['df_resultados'], 
+                res_ind['df_resultados'], 
+                tipo='Dependencia'
+            )
+            st.plotly_chart(fig_desp_dep, use_container_width=True, key="desp_dep")
+        
     else:
         st.warning("⚠️ Ejecuta primero los análisis DIRECTO e INDIRECTO")
 
@@ -1554,7 +1836,34 @@ with tab6:
         nombres = st.session_state.nombres_variables
         codigos = st.session_state.codigos_variables
         
-        st.subheader("🕸️ Red de Influencias Fuertes")
+        # === GRAFO DE INFLUENCIAS (estilo LIPSOR) ===
+        st.subheader("🕸️ Grafo de Influencias Potenciales Directas")
+        st.markdown("""
+        <div class="info-box">
+        Visualización de la red de influencias entre variables. El grosor y color de las líneas 
+        indica la intensidad de la influencia:
+        <span style="color:red"><b>━━ Muy fuerte</b></span> | 
+        <span style="color:blue"><b>━━ Fuerte</b></span> | 
+        <span style="color:lightblue">━━ Moderada</span> | 
+        <span style="color:gray">━━ Débil</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            umbral_grafo = st.slider(
+                "Umbral de visualización (%)", 
+                min_value=0, max_value=80, value=30,
+                help="Porcentaje mínimo del valor máximo para mostrar una conexión"
+            )
+            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=False)
+        
+        fig_grafo = crear_grafo_influencias(M, codigos, nombres, umbral_pct=umbral_grafo, mostrar_valores=mostrar_valores_grafo)
+        st.plotly_chart(fig_grafo, use_container_width=True, key="grafo_inf")
+        
+        st.divider()
+        
+        st.subheader("🕸️ Red de Influencias Fuertes (Vista alternativa)")
         umbral_red = st.slider("Umbral de intensidad", min_value=1, max_value=3, value=2, key="umbral_red")
         fig_red = crear_grafico_red_influencias(M, nombres, codigos, umbral=umbral_red, usar_codigos=usar_codigos)
         mostrar_grafico_con_descargas(fig_red, "red_influencias", "tab6_red")

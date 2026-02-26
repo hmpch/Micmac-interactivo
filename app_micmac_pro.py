@@ -923,7 +923,7 @@ def crear_grafico_inestabilidad(df_resultados):
 
 def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motricidad'):
     """
-    Crea gráfico de desplazamiento de ranking estilo LIPSOR
+    Crea gráfico de desplazamiento de ranking estilo LIPSOR - VERSIÓN MEJORADA
     Muestra cómo cambian las posiciones entre análisis directo e indirecto
     tipo: 'Motricidad' o 'Dependencia'
     """
@@ -931,12 +931,12 @@ def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motrici
     df_dir = df_directo.copy()
     df_ind = df_indirecto.copy()
     
-    df_dir['Rank_Dir'] = df_dir[tipo].rank(ascending=False).astype(int)
-    df_ind['Rank_Ind'] = df_ind[tipo].rank(ascending=False).astype(int)
+    df_dir['Rank_Dir'] = df_dir[tipo].rank(ascending=False, method='first').astype(int)
+    df_ind['Rank_Ind'] = df_ind[tipo].rank(ascending=False, method='first').astype(int)
     
     # Merge para comparar
     df_comp = pd.merge(
-        df_dir[['Código', 'Variable', 'Rank_Dir']],
+        df_dir[['Código', 'Variable', 'Rank_Dir', tipo]],
         df_ind[['Código', 'Rank_Ind']],
         on='Código'
     )
@@ -955,13 +955,13 @@ def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motrici
     for _, row in df_comp.iterrows():
         # Color según si subió (verde) o bajó (rojo)
         if row['Cambio'] > 0:
-            color = 'green'
-            width = min(1 + abs(row['Cambio']) * 0.3, 4)
+            color = '#22C55E'  # Verde
+            width = min(1.5 + abs(row['Cambio']) * 0.15, 3.5)
         elif row['Cambio'] < 0:
-            color = 'red'
-            width = min(1 + abs(row['Cambio']) * 0.3, 4)
+            color = '#EF4444'  # Rojo
+            width = min(1.5 + abs(row['Cambio']) * 0.15, 3.5)
         else:
-            color = 'gray'
+            color = '#9CA3AF'  # Gris
             width = 1
         
         fig.add_trace(go.Scatter(
@@ -969,65 +969,83 @@ def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motrici
             y=[row['Rank_Dir'], row['Rank_Ind']],
             mode='lines',
             line=dict(color=color, width=width),
-            hoverinfo='skip',
-            showlegend=False
+            hoverinfo='text',
+            hovertext=f"{row['Código']}: Pos {row['Rank_Dir']} → {row['Rank_Ind']} ({'+' if row['Cambio'] > 0 else ''}{row['Cambio']})",
+            showlegend=False,
+            opacity=0.7
         ))
     
-    # Agregar puntos y etiquetas lado izquierdo (Directo)
+    # Agregar puntos lado izquierdo (Directo) - SIN texto superpuesto
     fig.add_trace(go.Scatter(
         x=[0] * n,
         y=df_comp['Rank_Dir'],
-        mode='markers+text',
-        marker=dict(size=8, color='#1E3A8A'),
-        text=df_comp['Código'],
-        textposition='middle left',
-        textfont=dict(size=9),
-        name='Directo',
-        hovertemplate='<b>%{text}</b><br>Rank Directo: %{y}<extra></extra>'
+        mode='markers',
+        marker=dict(size=8, color='#1E3A8A', line=dict(width=1, color='white')),
+        hovertemplate='<b>%{customdata[0]}</b><br>Rank: %{y}<br>Valor: %{customdata[1]:.0f}<extra></extra>',
+        customdata=list(zip(df_comp['Código'], df_comp[tipo])),
+        showlegend=False
     ))
     
-    # Agregar puntos y etiquetas lado derecho (Indirecto)
+    # Agregar puntos lado derecho (Indirecto) - SIN texto superpuesto
     fig.add_trace(go.Scatter(
         x=[1] * n,
         y=df_comp['Rank_Ind'],
-        mode='markers+text',
-        marker=dict(size=8, color='#DC2626'),
-        text=df_comp['Código'],
-        textposition='middle right',
-        textfont=dict(size=9),
-        name='Indirecto',
-        hovertemplate='<b>%{text}</b><br>Rank Indirecto: %{y}<extra></extra>'
+        mode='markers',
+        marker=dict(size=8, color='#DC2626', line=dict(width=1, color='white')),
+        hovertemplate='<b>%{customdata}</b><br>Rank: %{y}<extra></extra>',
+        customdata=df_comp['Código'],
+        showlegend=False
     ))
     
-    # Configurar layout
+    # Agregar etiquetas como anotaciones (mejor control de posición)
+    for _, row in df_comp.iterrows():
+        # Etiqueta izquierda (Directo)
+        fig.add_annotation(
+            x=-0.02, y=row['Rank_Dir'],
+            text=f"{row['Rank_Dir']}. {row['Código']}",
+            showarrow=False,
+            xanchor='right',
+            font=dict(size=8, color='#1E3A8A', family='Arial'),
+        )
+        # Etiqueta derecha (Indirecto)
+        fig.add_annotation(
+            x=1.02, y=row['Rank_Ind'],
+            text=f"{row['Código']} .{row['Rank_Ind']}",
+            showarrow=False,
+            xanchor='left',
+            font=dict(size=8, color='#DC2626', family='Arial'),
+        )
+    
+    # Configurar layout con más altura
     fig.update_layout(
         title=dict(
-            text=f"<b>DESPLAZAMIENTO DE RANKING - {tipo.upper()}</b><br><sup>Directo → Indirecto | Verde=Sube, Rojo=Baja</sup>",
+            text=f"<b>RANKING {tipo.upper()}</b><br><sup>Directo → Indirecto</sup>",
             x=0.5,
-            xanchor='center'
+            xanchor='center',
+            font=dict(size=12)
         ),
         xaxis=dict(
             tickvals=[0, 1],
             ticktext=['<b>DIRECTO</b>', '<b>INDIRECTO</b>'],
-            range=[-0.3, 1.3],
-            showgrid=False
+            range=[-0.35, 1.35],
+            showgrid=False,
+            tickfont=dict(size=10)
         ),
         yaxis=dict(
-            title='Ranking',
+            title='',
             autorange='reversed',  # Rank 1 arriba
             showgrid=True,
-            gridcolor='rgba(0,0,0,0.1)'
+            gridcolor='rgba(0,0,0,0.05)',
+            dtick=1,  # Marca cada posición
+            range=[0, n + 1],
+            tickfont=dict(size=8)
         ),
-        height=max(500, n * 18),
+        height=max(700, n * 24),  # Más altura para separar
+        margin=dict(l=120, r=120, t=60, b=40),
         showlegend=False,
-        plot_bgcolor='#FFFEF0',
+        plot_bgcolor='#FEFEFE',
         paper_bgcolor='white'
     )
-    
-    # Agregar leyenda manual
-    fig.add_annotation(x=0.5, y=-0.08, xref='paper', yref='paper',
-                      text="🟢 Variable sube en ranking indirecto | 🔴 Variable baja en ranking indirecto",
-                      showarrow=False, font=dict(size=10))
     
     return fig
 
@@ -2031,6 +2049,6 @@ with tab8:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666;">
-<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting by Horacio Martin Pratto Chiarella 2025
+<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting | 2025
 </div>
 """, unsafe_allow_html=True)

@@ -2,7 +2,7 @@
 MICMAC PRO - Análisis Estructural con Conversor Integrado
 Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
-Autor: JETLEX Strategic Consulting by Horacio Martín Pratto Chiarella
+Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 Basado en el método de Michel Godet (1990)
 Versión: 5.5 - Metodología canónica Godet (umbral = MEDIA ARITMÉTICA)
 """
@@ -1500,7 +1500,7 @@ with tab2:
             return colors.get(val, '')
         
         st.dataframe(
-            df_directo.style.applymap(color_clasif_dir, subset=['Clasificación']),
+            df_directo.style.map(color_clasif_dir, subset=['Clasificación']),
             use_container_width=True, height=400
         )
         
@@ -1610,7 +1610,7 @@ with tab3:
             return colors.get(val, '')
         
         st.dataframe(
-            df_indirecto.style.applymap(color_clasif_ind, subset=['Clasificación']),
+            df_indirecto.style.map(color_clasif_ind, subset=['Clasificación']),
             use_container_width=True, height=400
         )
         

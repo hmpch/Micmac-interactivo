@@ -3,4 +3,6 @@ pandas
 numpy
 plotly
 openpyxl
-reportlab
+xlrd>=2.0.1
+matplotlib
+

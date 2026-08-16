@@ -1,9 +1,10 @@
 """
-MACTOR PRO v4.1 - Método de Análisis de Actores
-Matriz de Alianzas y Conflictos: Tácticas, Objetivos y Recomendaciones
+MICMAC PRO - Análisis Estructural con Conversor Integrado
+Matriz de Impactos Cruzados - Multiplicación Aplicada a una Clasificación
 
 Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
-Basado en el método de Michel Godet (LIPSOR)
+Basado en el método de Michel Godet (1990)
+Versión: 5.5 - Metodología canónica Godet (umbral = MEDIA ARITMÉTICA)
 """
 
 import streamlit as st
@@ -12,1337 +13,2042 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from io import BytesIO
+import re
 from datetime import datetime
 
-# ============================================================
-# CONFIGURACIÓN
-# ============================================================
+# Configuración de la página
 st.set_page_config(
-    page_title="MACTOR PRO v4.1",
-    page_icon="🎭",
+    page_title="MICMAC PRO - Análisis Estructural",
+    page_icon="🎯",
     layout="wide"
 )
 
+# CSS personalizado
 st.markdown("""
 <style>
-    .main-header {font-size: 2.5rem; font-weight: bold; color: #8B5CF6; text-align: center; margin-bottom: 0.5rem;}
-    .sub-header {font-size: 1.2rem; color: #666; text-align: center; margin-bottom: 2rem;}
-    .info-box {background-color: #EDE9FE; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #8B5CF6; margin: 1rem 0;}
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #666;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .info-box {
+        background-color: #e7f3ff;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1f77b4;
+        margin: 1rem 0;
+    }
+    .warning-box {
+        background-color: #fff3cd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #ffc107;
+        margin: 1rem 0;
+    }
+    .success-box {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #28a745;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# FUNCIONES DE PROCESAMIENTO
+# FUNCIONES DE GENERACIÓN DE CÓDIGOS INTELIGENTES
 # ============================================================
 
-def procesar_archivo_mactor(uploaded_file):
-    """Procesa archivo Excel MACTOR"""
-    try:
-        xl = pd.ExcelFile(uploaded_file)
-        hojas = xl.sheet_names
-        
-        resultado = {
-            'hojas': hojas, 'MAA': None, 'MAO_2': None,
-            'actores': None, 'objetivos': None, 'mensajes': []
-        }
-        
-        # Buscar MAA
-        for hoja in hojas:
-            if 'MAA' in hoja.upper() and 'JUST' not in hoja.upper():
-                df = pd.read_excel(xl, sheet_name=hoja, header=None)
-                fila_inicio = 0
-                for i in range(min(10, len(df))):
-                    val = str(df.iloc[i, 0]).lower() if pd.notna(df.iloc[i, 0]) else ""
-                    if 'de' in val and ('sobre' in val or '\\' in val):
-                        fila_inicio = i + 1
-                        break
-                if fila_inicio == 0:
-                    for i in range(min(10, len(df))):
-                        if pd.notna(df.iloc[i, 1]):
-                            try:
-                                float(df.iloc[i, 1])
-                                fila_inicio = i
-                                break
-                            except:
-                                pass
-                
-                actores, filas_datos = [], []
-                for i in range(fila_inicio, min(fila_inicio + 25, len(df))):
-                    nombre = df.iloc[i, 0]
-                    if pd.isna(nombre): continue
-                    nombre_str = str(nombre).strip()
-                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'ii', 'di']):
-                        actores.append(nombre_str)
-                        filas_datos.append(i)
-                
-                n = len(actores)
-                matriz = np.zeros((n, n))
-                for i, fila_idx in enumerate(filas_datos):
-                    for j in range(n):
-                        val = df.iloc[fila_idx, j + 1]
-                        if pd.notna(val):
-                            try: matriz[i, j] = float(val)
-                            except: pass
-                
-                np.fill_diagonal(matriz, 0)
-                resultado['MAA'] = pd.DataFrame(matriz, index=actores, columns=actores)
-                resultado['actores'] = actores
-                resultado['mensajes'].append(f"✅ MAA {n}×{n} procesada")
-                break
-        
-        # Buscar 2MAO
-        for hoja in hojas:
-            if '2MAO' in hoja.upper() and 'JUST' not in hoja.upper():
-                df = pd.read_excel(xl, sheet_name=hoja, header=None)
-                
-                # Buscar fila de headers (donde están O1, O2, etc.)
-                fila_headers = None
-                for i in range(min(10, len(df))):
-                    # Verificar si la fila tiene O1, O2, etc. como headers
-                    row_vals = [str(v).strip().upper() if pd.notna(v) else '' for v in df.iloc[i, :10]]
-                    if 'O1' in row_vals or 'O2' in row_vals:
-                        fila_headers = i
-                        break
-                    # También buscar "Actor" al inicio de la celda (no en medio de un título)
-                    val0 = str(df.iloc[i, 0]).strip() if pd.notna(df.iloc[i, 0]) else ""
-                    if val0.lower().startswith('actor') or '\\' in val0:
-                        fila_headers = i
-                        break
-                
-                if fila_headers is None:
-                    fila_headers = 3  # Default para tu archivo
-                
-                # Extraer objetivos
-                objetivos = []
-                for j in range(1, min(40, len(df.columns))):
-                    val = df.iloc[fila_headers, j]
-                    if pd.notna(val):
-                        obj_str = str(val).strip().upper()
-                        # Debe ser O seguido de número (O1, O2, ... O30)
-                        if obj_str.startswith('O') and len(obj_str) <= 3:
-                            try:
-                                int(obj_str[1:])  # Verificar que después de O hay un número
-                                objetivos.append(obj_str)
-                            except:
-                                pass
-                
-                # Extraer actores y datos
-                actores_mao, filas_datos = [], []
-                for i in range(fila_headers + 1, min(fila_headers + 26, len(df))):
-                    nombre = df.iloc[i, 0]
-                    if pd.isna(nombre): continue
-                    nombre_str = str(nombre).strip()
-                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'moviliz', 'σ']):
-                        actores_mao.append(nombre_str)
-                        filas_datos.append(i)
-                
-                n_actores, n_objetivos = len(actores_mao), len(objetivos)
-                if n_objetivos > 0 and n_actores > 0:
-                    matriz = np.zeros((n_actores, n_objetivos))
-                    for i, fila_idx in enumerate(filas_datos):
-                        for j in range(n_objetivos):
-                            val = df.iloc[fila_idx, j + 1]
-                            if pd.notna(val):
-                                try: matriz[i, j] = float(val)
-                                except: pass
-                    
-                    resultado['MAO_2'] = pd.DataFrame(matriz, index=actores_mao, columns=objetivos)
-                    resultado['objetivos'] = objetivos
-                    if resultado['actores'] is None:
-                        resultado['actores'] = actores_mao
-                    resultado['mensajes'].append(f"✅ 2MAO {n_actores}×{n_objetivos} procesada")
-                break
-        
-        return resultado
-    except Exception as e:
-        return {'error': str(e)}
+STOPWORDS = {
+    'de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'a', 'con', 'por', 'para',
+    'un', 'una', 'unos', 'unas', 'al', 'su', 'sus', 'que', 'se', 'es', 'son',
+    'the', 'of', 'and', 'in', 'to', 'for', 'a', 'an', 'on', 'at', 'by', 'with',
+    'from', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being'
+}
 
-# ============================================================
-# FUNCIONES DE CÁLCULO MACTOR
-# ============================================================
-
-def calcular_MIDI(MAA, k=2):
-    """Calcula MIDI"""
-    M = MAA.values.astype(float).copy()
-    MIDI = M.copy()
-    M_power = M.copy()
-    for i in range(2, k + 1):
-        M_power = np.dot(M_power, M)
-        MIDI += M_power
-    np.fill_diagonal(MIDI, 0)
-    return pd.DataFrame(MIDI, index=MAA.index, columns=MAA.columns)
-
-def calcular_balance_MIDI(MIDI):
-    """Calcula balance de fuerza"""
-    M = MIDI.values
-    Ii = M.sum(axis=1)
-    Di = M.sum(axis=0)
-    return pd.DataFrame({
-        'Actor': MIDI.index.tolist(),
-        'Ii': np.round(Ii, 1),
-        'Di': np.round(Di, 1),
-        'Ri': np.round(Ii / (Di + 0.001), 2),
-        'Ri_neto': np.round(Ii - Di, 1)
-    })
-
-def clasificar_actores(balance_df):
-    """Clasifica actores"""
-    Ii, Di = balance_df['Ii'].values, balance_df['Di'].values
-    med_Ii, med_Di = np.median(Ii), np.median(Di)
-    clasificacion = []
-    for i, d in zip(Ii, Di):
-        if i >= med_Ii and d < med_Di: clasificacion.append("Dominante")
-        elif i >= med_Ii and d >= med_Di: clasificacion.append("Enlace")
-        elif i < med_Ii and d >= med_Di: clasificacion.append("Dominado")
-        else: clasificacion.append("Autónomo")
-    return clasificacion, med_Ii, med_Di
-
-def calcular_convergencias_divergencias(MAO):
-    """Calcula CAA y DAA"""
-    M = MAO.values.copy()
-    n = M.shape[0]
-    actores = MAO.index.tolist()
-    CAA, DAA = np.zeros((n, n)), np.zeros((n, n))
-    CAA_pond, DAA_pond = np.zeros((n, n)), np.zeros((n, n))
+def tiene_codigo_explicito(nombre):
+    """Detecta si el nombre ya tiene un código explícito al inicio."""
+    if pd.isna(nombre):
+        return False, None
     
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                for k in range(M.shape[1]):
-                    vi, vj = M[i, k], M[j, k]
-                    if vi != 0 and vj != 0:
-                        intensidad = min(abs(vi), abs(vj))
-                        if (vi > 0 and vj > 0) or (vi < 0 and vj < 0):
-                            CAA[i, j] += 1
-                            CAA_pond[i, j] += intensidad
-                        elif (vi > 0 and vj < 0) or (vi < 0 and vj > 0):
-                            DAA[i, j] += 1
-                            DAA_pond[i, j] += intensidad
+    nombre = str(nombre).strip()
     
-    return (pd.DataFrame(CAA, index=actores, columns=actores),
-            pd.DataFrame(DAA, index=actores, columns=actores),
-            pd.DataFrame(CAA_pond, index=actores, columns=actores),
-            pd.DataFrame(DAA_pond, index=actores, columns=actores))
+    match = re.match(r'^([A-Za-z]+\d+)\s', nombre)
+    if match:
+        return True, match.group(1).upper()
+    
+    match = re.match(r'^([A-Z][A-Z0-9_]{1,12})$', nombre)
+    if match:
+        return True, match.group(1)
+    
+    match = re.match(r'^([A-Z][A-Z0-9_]{1,12})\s', nombre)
+    if match and len(match.group(1)) <= 12:
+        return True, match.group(1)
+    
+    return False, None
 
-def calcular_3MAO(MAO_2, MIDI):
-    """Calcula 3MAO"""
-    actores_comunes = [a for a in MAO_2.index if a in MIDI.index]
-    if len(actores_comunes) == 0: return None
+def generar_abreviatura_inteligente(nombre, max_chars=10):
+    """Genera una abreviatura inteligente a partir de un nombre largo."""
+    if pd.isna(nombre):
+        return "VAR"
     
-    MAO = MAO_2.loc[actores_comunes].values.copy()
-    M = MIDI.loc[actores_comunes, actores_comunes].values.copy()
-    Ri = M.sum(axis=1) - M.sum(axis=0)
+    nombre = str(nombre).strip()
+    nombre_limpio = re.sub(r'^[^a-zA-Z]+', '', nombre)
+    palabras = re.findall(r'[A-Za-záéíóúñÁÉÍÓÚÑ]+', nombre_limpio)
+    palabras_significativas = [p for p in palabras if p.lower() not in STOPWORDS]
     
-    if Ri.max() != Ri.min():
-        Ri_norm = 0.5 + (Ri - Ri.min()) / (Ri.max() - Ri.min())
+    if not palabras_significativas:
+        palabras_significativas = palabras
+    
+    if not palabras_significativas:
+        return "VAR"
+    
+    n_palabras = len(palabras_significativas)
+    
+    if n_palabras == 1:
+        return palabras_significativas[0][:max_chars].upper()
+    elif n_palabras == 2:
+        chars_cada = max_chars // 2
+        abrev = palabras_significativas[0][:chars_cada] + palabras_significativas[1][:chars_cada]
+        return abrev.upper()[:max_chars]
     else:
-        Ri_norm = np.ones_like(Ri)
+        if n_palabras <= 4:
+            chars_cada = max(2, max_chars // n_palabras)
+        else:
+            chars_cada = max(1, max_chars // min(n_palabras, 5))
+        
+        abrev = ''.join([p[:chars_cada] for p in palabras_significativas[:5]])
+        return abrev.upper()[:max_chars]
+
+def extraer_codigo(nombre_variable, max_chars=10):
+    """Extrae o genera un código corto para una variable."""
+    if pd.isna(nombre_variable):
+        return "VAR"
     
-    return pd.DataFrame(MAO * Ri_norm.reshape(-1, 1), index=actores_comunes, columns=MAO_2.columns)
+    nombre = str(nombre_variable).strip()
+    tiene_codigo, codigo = tiene_codigo_explicito(nombre)
+    if tiene_codigo:
+        return codigo[:max_chars]
+    
+    return generar_abreviatura_inteligente(nombre, max_chars)
 
-def calcular_balance_objetivos(MAO, balance_actores=None):
-    """Calcula balance por objetivo - FUNCIÓN CRÍTICA"""
-    try:
-        # Extraer datos
-        if hasattr(MAO, 'values'):
-            M = MAO.values.copy()
-            objetivos = [str(c) for c in MAO.columns.tolist()]
+def generar_codigos_y_mapeo(nombres_variables, max_chars=10):
+    """Genera códigos únicos para cada variable."""
+    codigos = []
+    mapeo = {}
+    codigos_usados = {}
+    
+    for i, nombre in enumerate(nombres_variables):
+        codigo_base = extraer_codigo(nombre, max_chars)
+        
+        if codigo_base in codigos_usados:
+            codigos_usados[codigo_base] += 1
+            sufijo = str(codigos_usados[codigo_base])
+            max_base = max_chars - len(sufijo)
+            codigo = codigo_base[:max_base] + sufijo
         else:
-            M = np.array(MAO).copy()
-            objetivos = [f"O{i+1}" for i in range(M.shape[1])]
+            codigos_usados[codigo_base] = 0
+            codigo = codigo_base
         
-        # Coeficiente de poder
-        if (balance_actores is not None and 
-            isinstance(balance_actores, pd.DataFrame) and 
-            'Ri_neto' in balance_actores.columns):
-            Ri_neto = balance_actores['Ri_neto'].values
-            if Ri_neto.max() != Ri_neto.min():
-                coef_poder = 0.5 + (Ri_neto - Ri_neto.min()) / (Ri_neto.max() - Ri_neto.min())
-            else:
-                coef_poder = np.ones(M.shape[0])
-        else:
-            coef_poder = np.ones(M.shape[0])
-        
-        # Calcular para cada objetivo
-        resultados = []
-        for j, obj in enumerate(objetivos):
-            pos = M[:, j]
-            n_favor = int((pos > 0).sum())
-            n_contra = int((pos < 0).sum())
-            n_neutro = int((pos == 0).sum())
-            suma_favor = float(np.where(pos > 0, pos, 0).sum())
-            suma_contra = float(np.where(pos < 0, pos, 0).sum())
-            balance_pond = float(np.sum(pos * coef_poder[:len(pos)]))
-            movilizacion = float(np.abs(pos).sum())
-            viabilidad = balance_pond / movilizacion if movilizacion > 0 else 0.0
-            
-            resultados.append({
-                'Objetivo': obj,
-                'A_favor': n_favor,
-                'Neutros': n_neutro,
-                'En_contra': n_contra,
-                'Suma_favor': suma_favor,
-                'Suma_contra': suma_contra,
-                'Balance_simple': suma_favor + suma_contra,
-                'Balance_ponderado': round(balance_pond, 2),
-                'Movilizacion': movilizacion,
-                'Viabilidad': round(viabilidad, 2)
-            })
-        
-        return pd.DataFrame(resultados)
-    except Exception as e:
-        st.error(f"Error en calcular_balance_objetivos: {e}")
-        return pd.DataFrame()
+        codigos.append(codigo)
+        mapeo[codigo] = nombre
+    
+    return codigos, mapeo
 
-def calcular_implicacion_actores(MAO):
-    """Calcula implicación de actores"""
-    try:
-        M = MAO.values.copy()
-        actores = [str(a) for a in MAO.index.tolist()]
-        
-        resultados = []
-        for i, actor in enumerate(actores):
-            pos = M[i, :]
-            resultados.append({
-                'Actor': actor,
-                'Obj_favor': int((pos > 0).sum()),
-                'Obj_neutro': int((pos == 0).sum()),
-                'Obj_contra': int((pos < 0).sum()),
-                'Intensidad_favor': float(np.where(pos > 0, pos, 0).sum()),
-                'Intensidad_contra': float(np.abs(np.where(pos < 0, pos, 0).sum())),
-                'Implicacion_total': float(np.abs(pos).sum())
-            })
-        
-        return pd.DataFrame(resultados)
-    except Exception as e:
-        st.error(f"Error en calcular_implicacion_actores: {e}")
-        return pd.DataFrame()
-
-def calcular_ambivalencia(CAA, DAA):
-    """Calcula ambivalencia"""
-    C, D = CAA.values.copy(), DAA.values.copy()
-    with np.errstate(divide='ignore', invalid='ignore'):
-        amb = np.minimum(C, D) / (np.maximum(C, D) + 0.001)
-        amb = np.nan_to_num(amb, nan=0.0)
-    return pd.DataFrame(amb, index=CAA.index, columns=CAA.columns)
+def truncar_texto(texto, max_chars=30):
+    """Trunca texto largo agregando '...' si excede el máximo"""
+    if pd.isna(texto):
+        return ""
+    texto = str(texto)
+    if len(texto) <= max_chars:
+        return texto
+    return texto[:max_chars-3] + "..."
 
 # ============================================================
 # FUNCIONES DE VISUALIZACIÓN
 # ============================================================
 
-def mostrar_grafico_con_descargas(fig, nombre, key):
-    """Muestra gráfico con opciones de descarga"""
-    st.plotly_chart(fig, use_container_width=True, key=f"chart_{key}")
-    col1, col2 = st.columns(2)
+def mostrar_grafico_con_descargas(fig, nombre_base, key_suffix=""):
+    """Muestra un gráfico Plotly con opciones de descarga"""
+    
+    config = {
+        'toImageButtonOptions': {
+            'format': 'png',
+            'filename': nombre_base,
+            'height': 800,
+            'width': 1200,
+            'scale': 2
+        },
+        'displaylogo': False,
+        'displayModeBar': True,
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+    }
+    
+    st.plotly_chart(fig, use_container_width=True, config=config, key=f"chart_{nombre_base}_{key_suffix}")
+    
+    col1, col2, col3 = st.columns(3)
+    
     with col1:
-        html = fig.to_html(include_plotlyjs='cdn', full_html=True)
-        st.download_button("📥 HTML", html.encode(), f"{nombre}.html", "text/html", key=f"h_{key}")
+        html_buffer = BytesIO()
+        html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
+        html_buffer.write(html_content.encode())
+        html_buffer.seek(0)
+        
+        st.download_button(
+            label="📥 HTML Interactivo",
+            data=html_buffer,
+            file_name=f"{nombre_base}.html",
+            mime="text/html",
+            key=f"html_{nombre_base}_{key_suffix}"
+        )
+    
     with col2:
         try:
-            img = fig.to_image(format="png", width=1200, height=800, scale=2)
-            st.download_button("📥 PNG", img, f"{nombre}.png", "image/png", key=f"p_{key}")
-        except:
-            st.info("📷 Usa el ícono de cámara")
-
-def crear_plano_influencias(balance_df, med_Ii, med_Di):
-    """Plano de influencias/dependencias"""
-    clasificacion, _, _ = clasificar_actores(balance_df)
-    df = balance_df.copy()
-    df['Clasificación'] = clasificacion
+            svg_str = fig.to_image(format="svg").decode('utf-8')
+            st.download_button(
+                label="📥 SVG (Vector)",
+                data=svg_str,
+                file_name=f"{nombre_base}.svg",
+                mime="image/svg+xml",
+                key=f"svg_{nombre_base}_{key_suffix}"
+            )
+        except Exception:
+            st.info("📷 Usa el ícono de cámara en el gráfico")
     
-    colores = {'Dominante': '#DC2626', 'Enlace': '#7C3AED', 'Dominado': '#2563EB', 'Autónomo': '#D97706'}
+    with col3:
+        try:
+            img_bytes = fig.to_image(format="png", width=1200, height=800, scale=2)
+            st.download_button(
+                label="📥 PNG (Imagen)",
+                data=img_bytes,
+                file_name=f"{nombre_base}.png",
+                mime="image/png",
+                key=f"png_{nombre_base}_{key_suffix}"
+            )
+        except Exception:
+            st.markdown("📷 **PNG:** Clic en 📷 del gráfico")
+
+# ============================================================
+# FUNCIONES DE CÁLCULO MICMAC - DIRECTO E INDIRECTO
+# ============================================================
+
+def calcular_mid_directo(M):
+    """
+    Análisis DIRECTO (MID)
+    Usa la matriz original M sin transformaciones.
+    Valores en escala original (0-3 × n variables).
+    """
+    M = np.array(M, dtype=float)
+    np.fill_diagonal(M, 0)
+    return M
+
+def calcular_motricidad_dependencia_directa(M):
+    """
+    Calcula Motricidad y Dependencia DIRECTAS
+    - Motricidad (M): suma de la fila = influencia que EJERCE la variable
+    - Dependencia (D): suma de la columna = influencia que RECIBE la variable
+    """
+    M = np.array(M, dtype=float)
+    np.fill_diagonal(M, 0)
+    motricidad = M.sum(axis=1)  # Suma de filas
+    dependencia = M.sum(axis=0)  # Suma de columnas
+    return motricidad, dependencia
+
+def clasificar_variables_directas(motricidad, dependencia):
+    """
+    Clasifica variables según análisis DIRECTO
+    IMPORTANTE: Usa MEDIA ARITMÉTICA como umbral (metodología canónica de Godet)
+    Referencia: Godet, M. (2007) - "el umbral de clasificación es la media aritmética 
+    de motricidad y dependencia del sistema"
+    
+    Nomenclatura clásica de Godet para análisis directo:
+    - Motrices: Alta M, Baja D (palancas del sistema)
+    - Enlace/Relé: Alta M, Alta D (nudos críticos)
+    - Resultado/Dependientes: Baja M, Alta D (indicadores)
+    - Autónomas/Excluidas: Baja M, Baja D (poco relevantes)
+    """
+    # MEDIA ARITMÉTICA (metodología Godet/LIPSOR canónica)
+    med_mot = np.mean(motricidad)
+    med_dep = np.mean(dependencia)
+    
+    clasificacion = []
+    for mot, dep in zip(motricidad, dependencia):
+        if mot >= med_mot and dep < med_dep:
+            clasificacion.append("Motrices")
+        elif mot >= med_mot and dep >= med_dep:
+            clasificacion.append("Enlace")
+        elif mot < med_mot and dep >= med_dep:
+            clasificacion.append("Resultado")
+        else:
+            clasificacion.append("Autónomas")
+    
+    return clasificacion, med_mot, med_dep
+
+def calcular_midi(M, alpha=0.5, K=3):
+    """
+    Análisis INDIRECTO (MIDI)
+    Calcula la Matriz de Influencias Directas e Indirectas.
+    MIDI = M + αM² + α²M³ + ... + α^(K-1)M^K
+    Valores en escala amplificada (pueden ser millones).
+    """
+    M = np.array(M, dtype=float)
+    n = M.shape[0]
+    
+    if n == 0:
+        return M
+    
+    np.fill_diagonal(M, 0)
+    
+    MIDI = M.copy()
+    M_power = M.copy()
+    
+    for k in range(2, K + 1):
+        M_power = np.dot(M_power, M)
+        MIDI += (alpha ** (k - 1)) * M_power
+    
+    return MIDI
+
+def calcular_motricidad_dependencia(MIDI):
+    """Calcula motricidad y dependencia de MIDI (análisis indirecto)"""
+    motricidad = MIDI.sum(axis=1)
+    dependencia = MIDI.sum(axis=0)
+    return motricidad, dependencia
+
+def clasificar_variables(motricidad, dependencia):
+    """
+    Clasifica variables según análisis INDIRECTO
+    IMPORTANTE: Usa MEDIA ARITMÉTICA como umbral (metodología canónica de Godet)
+    Referencia: Godet, M. (2007)
+    
+    Nomenclatura para análisis indirecto:
+    - Determinantes: Alta M, Baja D
+    - Clave: Alta M, Alta D
+    - Variables resultado: Baja M, Alta D
+    - Autónomas: Baja M, Baja D
+    """
+    # MEDIA ARITMÉTICA (metodología Godet/LIPSOR canónica)
+    med_mot = np.mean(motricidad)
+    med_dep = np.mean(dependencia)
+    
+    clasificacion = []
+    for mot, dep in zip(motricidad, dependencia):
+        if mot >= med_mot and dep < med_dep:
+            clasificacion.append("Determinantes")
+        elif mot >= med_mot and dep >= med_dep:
+            clasificacion.append("Clave")
+        elif mot < med_mot and dep >= med_dep:
+            clasificacion.append("Variables resultado")
+        else:
+            clasificacion.append("Autónomas")
+    
+    return clasificacion, med_mot, med_dep
+
+def detectar_convergencia(M, K_max=10, tolerancia=0.01):
+    """Detecta el K óptimo donde el ranking se estabiliza"""
+    M = np.array(M, dtype=float)
+    
+    if M.shape[0] == 0:
+        return 3
+    
+    ranking_anterior = None
+    
+    for K in range(2, K_max + 1):
+        try:
+            MIDI = calcular_midi(M, alpha=0.5, K=K)
+            motricidad, _ = calcular_motricidad_dependencia(MIDI)
+            ranking_actual = np.argsort(motricidad)[::-1]
+            
+            if ranking_anterior is not None and len(ranking_anterior) == len(ranking_actual):
+                correlacion = np.corrcoef(ranking_anterior, ranking_actual)[0, 1]
+                if not np.isnan(correlacion) and correlacion > (1 - tolerancia):
+                    return K
+            
+            ranking_anterior = ranking_actual
+        except:
+            return 3
+    
+    return K_max
+
+# ============================================================
+# FUNCIONES DE ANÁLISIS ADICIONALES
+# ============================================================
+
+def identificar_relaciones_fuertes(M, nombres, umbral=2):
+    """Identifica las relaciones más fuertes de la matriz"""
+    relaciones = []
+    n = len(nombres)
+    for i in range(n):
+        for j in range(n):
+            if i != j and M[i, j] >= umbral:
+                relaciones.append({
+                    'Origen': nombres[i],
+                    'Destino': nombres[j],
+                    'Intensidad': M[i, j]
+                })
+    return sorted(relaciones, key=lambda x: x['Intensidad'], reverse=True)
+
+def comparar_directo_indirecto(df_directo, df_indirecto):
+    """Compara clasificaciones entre análisis directo e indirecto"""
+    df_comp = pd.merge(
+        df_directo[['Código', 'Variable', 'Clasificación']].rename(columns={'Clasificación': 'Clasif_Directa'}),
+        df_indirecto[['Código', 'Clasificación']].rename(columns={'Clasificación': 'Clasif_Indirecta'}),
+        on='Código'
+    )
+    df_comp['Cambio'] = df_comp['Clasif_Directa'] != df_comp['Clasif_Indirecta']
+    return df_comp
+
+# ============================================================
+# PROCESADOR ROBUSTO DE ARCHIVOS EXCEL
+# ============================================================
+
+def es_celda_excluir(valor):
+    """Detecta si una celda contiene valores a excluir"""
+    if pd.isna(valor):
+        return False
+    valor_str = str(valor).upper().strip()
+    palabras_excluir = ['SUMA', 'TOTAL', 'SUM', 'PROMEDIO', 'AVERAGE', 'MEAN', 'Σ', 'MOTRI', 'DEPEN']
+    return any(palabra in valor_str for palabra in palabras_excluir)
+
+def es_valor_diagonal(valor):
+    """Detecta si un valor es marcador de diagonal"""
+    if pd.isna(valor):
+        return False
+    valor_str = str(valor).upper().strip()
+    return valor_str in ['X', '-', 'N/A', 'NA', 'DIAG', '*']
+
+def convertir_valor_numerico(valor):
+    """Convierte un valor a numérico"""
+    if pd.isna(valor):
+        return 0.0
+    if es_valor_diagonal(valor):
+        return 0.0
+    try:
+        return float(valor)
+    except (ValueError, TypeError):
+        return 0.0
+
+def detectar_inicio_matriz(df):
+    """Detecta automáticamente dónde empieza la matriz de datos"""
+    for i in range(min(20, len(df))):
+        fila = df.iloc[i, 1:min(10, len(df.columns))]
+        
+        valores_validos = 0
+        for val in fila:
+            if pd.isna(val):
+                continue
+            if es_valor_diagonal(val):
+                valores_validos += 1
+            else:
+                try:
+                    float(val)
+                    valores_validos += 1
+                except:
+                    pass
+        
+        if valores_validos >= len(fila) * 0.5:
+            return i
+    
+    return 0
+
+def procesar_archivo_excel(uploaded_file, nombre_hoja=None):
+    """Procesa archivo Excel de forma robusta"""
+    try:
+        xl = pd.ExcelFile(uploaded_file)
+        hojas_disponibles = xl.sheet_names
+        
+        if nombre_hoja and nombre_hoja in hojas_disponibles:
+            hoja_usar = nombre_hoja
+        else:
+            hoja_usar = hojas_disponibles[0]
+            for hoja in hojas_disponibles:
+                if 'MID' in hoja.upper() or 'MATRIZ' in hoja.upper():
+                    hoja_usar = hoja
+                    break
+        
+        df = pd.read_excel(xl, sheet_name=hoja_usar, header=None)
+        
+        if df.empty:
+            return None, None, None, "El archivo está vacío"
+        
+        fila_inicio = detectar_inicio_matriz(df)
+        
+        if fila_inicio > 0:
+            headers = df.iloc[fila_inicio - 1, :].tolist()
+        else:
+            headers = df.iloc[0, :].tolist()
+            fila_inicio = 1
+        
+        columnas_validas = []
+        for j in range(1, len(df.columns)):
+            header = headers[j] if j < len(headers) else None
+            if not es_celda_excluir(header):
+                columnas_validas.append(j)
+        
+        filas_validas = []
+        nombres_variables = []
+        
+        for i in range(fila_inicio, len(df)):
+            nombre_fila = df.iloc[i, 0]
+            
+            if es_celda_excluir(nombre_fila):
+                continue
+            
+            fila_datos = df.iloc[i, columnas_validas[:5]]
+            valores_numericos = 0
+            for val in fila_datos:
+                if es_valor_diagonal(val) or (not pd.isna(val) and isinstance(val, (int, float))):
+                    valores_numericos += 1
+                else:
+                    try:
+                        float(val)
+                        valores_numericos += 1
+                    except:
+                        pass
+            
+            if valores_numericos >= 2:
+                filas_validas.append(i)
+                nombres_variables.append(str(nombre_fila).strip() if pd.notna(nombre_fila) else f"V{len(nombres_variables)+1}")
+        
+        if len(filas_validas) == 0:
+            return None, None, None, "No se encontraron filas con datos válidos"
+        
+        n = min(len(filas_validas), len(columnas_validas))
+        filas_validas = filas_validas[:n]
+        columnas_validas = columnas_validas[:n]
+        nombres_variables = nombres_variables[:n]
+        
+        matriz = np.zeros((n, n))
+        for i, fila_idx in enumerate(filas_validas):
+            for j, col_idx in enumerate(columnas_validas):
+                valor = df.iloc[fila_idx, col_idx]
+                matriz[i, j] = convertir_valor_numerico(valor)
+        
+        np.fill_diagonal(matriz, 0)
+        
+        df_matriz = pd.DataFrame(matriz, index=nombres_variables, columns=nombres_variables)
+        
+        return df_matriz, nombres_variables, hojas_disponibles, f"✅ Matriz {n}x{n} de hoja '{hoja_usar}' procesada correctamente"
+            
+    except Exception as e:
+        return None, None, None, f"Error: {str(e)}"
+
+# ============================================================
+# GENERACIÓN DE GRÁFICOS
+# ============================================================
+
+def crear_grafico_subsistemas(df_res, med_mot, med_dep, motricidad, dependencia, titulo, usar_codigos=True, mostrar_etiquetas=True, tamaño_fuente=10, M_original=None):
+    """
+    Crea gráfico de subsistemas profesional estilo LIPSOR/Godet
+    Con cuadrantes coloreados, estadísticas y diseño HD
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    
+    # Calcular límites
+    max_mot = max(motricidad) * 1.15
+    max_dep = max(dependencia) * 1.15
+    min_mot = min(0, min(motricidad) * 0.9)
+    min_dep = min(0, min(dependencia) * 0.9)
+    
+    # Contar clasificaciones
+    from collections import Counter
+    conteo = Counter(df_res['Clasificación'].tolist())
+    
+    # Colores por clasificación
+    colores_puntos = {
+        'Motrices': '#1E3A8A',      # Azul oscuro
+        'Determinantes': '#1E3A8A',
+        'Enlace': '#B91C1C',         # Rojo oscuro
+        'Clave': '#B91C1C',
+        'Resultado': '#DC2626',      # Rojo
+        'Variables resultado': '#DC2626',
+        'Autónomas': '#1E40AF'       # Azul
+    }
+    
+    # Colores de fondo de cuadrantes (muy suaves)
     fig = go.Figure()
     
-    for clasif in colores.keys():
-        df_temp = df[df['Clasificación'] == clasif]
-        if len(df_temp) > 0:
+    # Agregar rectángulos de fondo para cada cuadrante
+    # Cuadrante MOTRICES (arriba-izquierda): verde muy suave
+    fig.add_shape(type="rect", x0=min_dep, y0=med_mot, x1=med_dep, y1=max_mot,
+                  fillcolor="rgba(220, 252, 231, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante ENLACE (arriba-derecha): rojo muy suave
+    fig.add_shape(type="rect", x0=med_dep, y0=med_mot, x1=max_dep, y1=max_mot,
+                  fillcolor="rgba(254, 226, 226, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante AUTÓNOMAS (abajo-izquierda): amarillo muy suave
+    fig.add_shape(type="rect", x0=min_dep, y0=min_mot, x1=med_dep, y1=med_mot,
+                  fillcolor="rgba(254, 249, 195, 0.5)", line=dict(width=0), layer="below")
+    
+    # Cuadrante RESULTADO (abajo-derecha): azul muy suave
+    fig.add_shape(type="rect", x0=med_dep, y0=min_mot, x1=max_dep, y1=med_mot,
+                  fillcolor="rgba(219, 234, 254, 0.5)", line=dict(width=0), layer="below")
+    
+    # Agregar títulos de cuadrantes
+    font_cuadrante = dict(size=14, color='rgba(0,0,0,0.7)', family='Arial Black')
+    font_subtitulo = dict(size=9, color='rgba(0,0,0,0.5)', family='Arial')
+    
+    # MOTRICES / PALANCAS
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=max_mot * 0.92,
+                      text="<b>MOTRICES / PALANCAS</b>", showarrow=False,
+                      font=dict(size=13, color='#166534'), opacity=0.8)
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=max_mot * 0.85,
+                      text="Alta motricidad · Baja dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # ENLACE / CLAVE
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=max_mot * 0.92,
+                      text="<b>ENLACE / CLAVE</b>", showarrow=False,
+                      font=dict(size=13, color='#991B1B'), opacity=0.8)
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=max_mot * 0.85,
+                      text="Alta motricidad · Alta dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # AUTÓNOMAS
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=min_mot + (med_mot - min_mot) * 0.08,
+                      text="<b>AUTÓNOMAS</b>", showarrow=False,
+                      font=dict(size=13, color='#92400E'), opacity=0.8)
+    fig.add_annotation(x=(min_dep + med_dep)/2, y=min_mot + (med_mot - min_mot) * 0.02,
+                      text="Baja motricidad · Baja dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # RESULTADO / DEPENDIENTES
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=min_mot + (med_mot - min_mot) * 0.08,
+                      text="<b>RESULTADO / DEPENDIENTES</b>", showarrow=False,
+                      font=dict(size=13, color='#1E40AF'), opacity=0.8)
+    fig.add_annotation(x=(med_dep + max_dep)/2, y=min_mot + (med_mot - min_mot) * 0.02,
+                      text="Baja motricidad · Alta dependencia", showarrow=False,
+                      font=font_subtitulo)
+    
+    # Agregar puntos por clasificación
+    for clasif in df_res['Clasificación'].unique():
+        color = colores_puntos.get(clasif, '#666666')
+        mask = df_res['Clasificación'] == clasif
+        df_temp = df_res[mask]
+        n_vars = len(df_temp)
+        
+        if n_vars > 0:
+            etiquetas_temp = df_temp['Código'].tolist() if usar_codigos else df_temp['Variable'].tolist()
+            hover_text = [f"<b>{c}</b><br>{v}<br>M={m:.0f}, D={d:.0f}" 
+                         for c, v, m, d in zip(df_temp['Código'], df_temp['Variable'], 
+                                               df_temp['Motricidad'], df_temp['Dependencia'])]
+            
             fig.add_trace(go.Scatter(
-                x=df_temp['Di'], y=df_temp['Ii'],
-                mode='markers+text', name=clasif,
-                text=df_temp['Actor'], textposition='top center',
-                marker=dict(size=16, color=colores[clasif], line=dict(width=2, color='white'))
+                x=df_temp['Dependencia'],
+                y=df_temp['Motricidad'],
+                mode='markers+text' if mostrar_etiquetas else 'markers',
+                name=f"{clasif} ({n_vars})",
+                text=etiquetas_temp if mostrar_etiquetas else None,
+                textposition='top center',
+                textfont=dict(size=tamaño_fuente, color='#1f2937'),
+                marker=dict(size=12, color=color, line=dict(width=1.5, color='white'),
+                           opacity=0.9),
+                hovertext=hover_text,
+                hoverinfo='text'
             ))
     
-    fig.add_hline(y=med_Ii, line_dash="dash", line_color="gray", opacity=0.5)
-    fig.add_vline(x=med_Di, line_dash="dash", line_color="gray", opacity=0.5)
-    fig.update_layout(title="Plano de Influencias/Dependencias", xaxis_title="Dependencia (Di)", yaxis_title="Influencia (Ii)", height=600)
+    # Líneas de media (más visibles)
+    fig.add_hline(y=med_mot, line_dash="dash", line_color="#9CA3AF", line_width=2, opacity=0.8)
+    fig.add_vline(x=med_dep, line_dash="dash", line_color="#9CA3AF", line_width=2, opacity=0.8)
+    
+    # Calcular estadísticas para el panel
+    n_vars = len(df_res)
+    fill_rate = 0
+    if M_original is not None:
+        n = M_original.shape[0]
+        # Fill rate: excluir diagonal (autoinfluencia no se cuenta en MICMAC)
+        n_total = n * (n - 1)  # Celdas posibles sin diagonal
+        n_nonzero = (M_original != 0).sum()
+        fill_rate = (n_nonzero / n_total) * 100 if n_total > 0 else 0
+    
+    # Top 5 Motrices
+    top5_mot = df_res.nlargest(5, 'Motricidad')[['Código', 'Motricidad']]
+    # Top 5 Dependientes
+    top5_dep = df_res.nlargest(5, 'Dependencia')[['Código', 'Dependencia']]
+    
+    # Crear texto de estadísticas para anotación
+    stats_text = f"<b>ESTADÍSTICAS</b><br>"
+    stats_text += f"Variables: {n_vars}<br>"
+    if fill_rate > 0:
+        stats_text += f"Fill rate: {fill_rate:.1f}%<br>"
+    stats_text += f"Prom. M: {med_mot:.1f}<br>"
+    stats_text += f"Prom. D: {med_dep:.1f}<br><br>"
+    stats_text += f"<b>TOP 5 MOTRICES</b><br>"
+    for _, row in top5_mot.iterrows():
+        stats_text += f"{row['Código']}: M={row['Motricidad']:.0f}<br>"
+    stats_text += f"<br><b>TOP 5 DEPENDIENTES</b><br>"
+    for _, row in top5_dep.iterrows():
+        stats_text += f"{row['Código']}: D={row['Dependencia']:.0f}<br>"
+    
+    # Subtítulo con metadata (más compacto)
+    subtitulo = f"Matriz {n_vars}×{n_vars}"
+    if fill_rate > 0:
+        subtitulo += f" · Fill: {fill_rate:.1f}%"
+    subtitulo += f" · Media: M={med_mot:.1f}, D={med_dep:.1f}"
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<b>PLANO MOTRICIDAD-DEPENDENCIA</b><br><sup>Clasificación de {n_vars} variables MICMAC · {subtitulo}</sup>",
+            x=0.45,  # Centrado considerando el margen derecho
+            xanchor='center',
+            font=dict(size=15)
+        ),
+        xaxis=dict(
+            title=dict(text="<b>DEPENDENCIA →</b>", font=dict(size=12)),
+            range=[min_dep, max_dep],
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=dict(text="<b>↑ MOTRICIDAD</b>", font=dict(size=12)),
+            range=[min_mot, max_mot],
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            zeroline=False
+        ),
+        height=700,
+        showlegend=True,
+        legend=dict(
+            title=dict(text="<b>CLASIFICACIÓN</b>", font=dict(size=11)),
+            orientation="v",
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=1.02,
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1
+        ),
+        margin=dict(r=200),  # Espacio para la leyenda
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        # Agregar anotación con estadísticas
+        annotations=[
+            dict(
+                x=1.02,
+                y=0.45,
+                xref="paper",
+                yref="paper",
+                text=stats_text,
+                showarrow=False,
+                font=dict(size=9, family="Courier New"),
+                align="left",
+                bgcolor="rgba(249,250,251,0.95)",
+                bordercolor="rgba(0,0,0,0.2)",
+                borderwidth=1,
+                borderpad=8
+            ),
+            # Pie de página
+            dict(
+                x=0.5,
+                y=-0.12,
+                xref="paper",
+                yref="paper",
+                text="Fuente: Elaboración propia · Metodología: Godet/LIPSOR · Software: MICMAC PRO v5.5",
+                showarrow=False,
+                font=dict(size=9, color='gray'),
+                align="center"
+            )
+        ]
+    )
+    
     return fig
 
-def crear_histograma_balance(balance_df):
-    """Histograma de balance"""
-    df = balance_df.sort_values('Ri_neto', ascending=True).copy()
-    colores = ['#DC2626' if x > 0 else '#2563EB' for x in df['Ri_neto']]
+def crear_grafico_red_influencias(M, nombres, codigos, umbral=2, usar_codigos=True):
+    """Crea un gráfico de red de influencias fuertes"""
+    etiquetas = codigos if usar_codigos else nombres
+    n = len(etiquetas)
     
-    fig = go.Figure(go.Bar(
-        x=df['Ri_neto'], y=df['Actor'], orientation='h',
-        marker_color=colores, text=df['Ri_neto'].apply(lambda x: f"{x:+.0f}"), textposition='outside'
-    ))
-    fig.add_vline(x=0, line_color="black", line_width=2)
-    fig.update_layout(title="Balance de Relaciones de Fuerza (Ii - Di)", height=500)
-    return fig
-
-def crear_heatmap_matriz(matriz, titulo, colorscale='Blues', show_text=True, zmid=None):
-    """Heatmap genérico"""
-    fig = go.Figure(data=go.Heatmap(
-        z=matriz.values, x=matriz.columns.tolist(), y=matriz.index.tolist(),
-        colorscale=colorscale, zmid=zmid,
-        text=matriz.values.round(1) if show_text else None,
-        texttemplate="%{text}" if show_text else None
-    ))
-    fig.update_layout(title=titulo, height=600)
-    return fig
-
-def crear_grafico_balance_objetivos(balance_obj_df):
-    """Gráfico de balance por objetivo - CON VERIFICACIONES"""
-    # VERIFICACIONES CRÍTICAS
-    if balance_obj_df is None:
-        fig = go.Figure()
-        fig.add_annotation(text="Error: datos nulos", showarrow=False, font=dict(size=20))
-        return fig
-    
-    if not isinstance(balance_obj_df, pd.DataFrame):
-        fig = go.Figure()
-        fig.add_annotation(text=f"Error: tipo inválido ({type(balance_obj_df)})", showarrow=False, font=dict(size=20))
-        return fig
-    
-    if len(balance_obj_df) == 0:
-        fig = go.Figure()
-        fig.add_annotation(text="Sin datos para mostrar", showarrow=False, font=dict(size=20))
-        return fig
-    
-    if 'Balance_ponderado' not in balance_obj_df.columns:
-        fig = go.Figure()
-        fig.add_annotation(text=f"Columnas: {list(balance_obj_df.columns)}", showarrow=False, font=dict(size=14))
-        return fig
-    
-    if 'Objetivo' not in balance_obj_df.columns:
-        fig = go.Figure()
-        fig.add_annotation(text="Falta columna 'Objetivo'", showarrow=False, font=dict(size=20))
-        return fig
-    
-    # CREAR GRÁFICO
-    df = balance_obj_df.sort_values('Balance_ponderado', ascending=True).copy()
-    colores = ['#10B981' if x > 0 else '#EF4444' if x < 0 else '#6B7280' for x in df['Balance_ponderado']]
-    
-    fig = go.Figure(go.Bar(
-        x=df['Balance_ponderado'], y=df['Objetivo'], orientation='h',
-        marker_color=colores, text=df['Balance_ponderado'].apply(lambda x: f"{x:+.1f}"), textposition='outside'
-    ))
-    fig.add_vline(x=0, line_color="black", line_width=2)
-    fig.update_layout(title="Balance Neto Ponderado por Objetivo", xaxis_title="Balance", height=max(400, len(df) * 25))
-    return fig
-
-def crear_grafico_viabilidad_objetivos(balance_obj_df):
-    """Gráfico de viabilidad - CON VERIFICACIONES"""
-    if balance_obj_df is None or not isinstance(balance_obj_df, pd.DataFrame) or len(balance_obj_df) == 0:
-        return go.Figure().add_annotation(text="Sin datos", showarrow=False)
-    
-    if 'Viabilidad' not in balance_obj_df.columns or 'Objetivo' not in balance_obj_df.columns:
-        return go.Figure().add_annotation(text="Columnas faltantes", showarrow=False)
-    
-    df = balance_obj_df.sort_values('Viabilidad', ascending=True).copy()
-    colores = ['#10B981' if x > 0.3 else '#EF4444' if x < -0.3 else '#F59E0B' for x in df['Viabilidad']]
-    
-    fig = go.Figure(go.Bar(
-        x=df['Viabilidad'], y=df['Objetivo'], orientation='h',
-        marker_color=colores, text=df['Viabilidad'].apply(lambda x: f"{x:+.2f}"), textposition='outside'
-    ))
-    fig.add_vline(x=0, line_color="black", line_width=2)
-    fig.update_layout(title="Índice de Viabilidad por Objetivo", height=max(400, len(df) * 25))
-    return fig
-
-def crear_grafico_movilizacion_objetivos(balance_obj_df):
-    """Gráfico de movilización - CON VERIFICACIONES"""
-    if balance_obj_df is None or not isinstance(balance_obj_df, pd.DataFrame) or len(balance_obj_df) == 0:
-        return go.Figure().add_annotation(text="Sin datos", showarrow=False)
-    
-    required = ['Objetivo', 'A_favor', 'En_contra']
-    if not all(c in balance_obj_df.columns for c in required):
-        return go.Figure().add_annotation(text="Columnas faltantes", showarrow=False)
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name='A favor', x=balance_obj_df['Objetivo'], y=balance_obj_df['A_favor'], marker_color='#10B981'))
-    fig.add_trace(go.Bar(name='En contra', x=balance_obj_df['Objetivo'], y=-balance_obj_df['En_contra'], marker_color='#EF4444'))
-    fig.update_layout(title="Movilización de Actores", barmode='relative', height=500)
-    return fig
-
-def crear_grafico_implicacion_actores(impl_df):
-    """Gráfico de implicación - CON VERIFICACIONES"""
-    if impl_df is None or not isinstance(impl_df, pd.DataFrame) or len(impl_df) == 0:
-        return go.Figure().add_annotation(text="Sin datos", showarrow=False)
-    
-    required = ['Actor', 'Intensidad_favor', 'Intensidad_contra', 'Implicacion_total']
-    if not all(c in impl_df.columns for c in required):
-        return go.Figure().add_annotation(text="Columnas faltantes", showarrow=False)
-    
-    df = impl_df.sort_values('Implicacion_total', ascending=True).copy()
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name='A favor', y=df['Actor'], x=df['Intensidad_favor'], orientation='h', marker_color='#10B981'))
-    fig.add_trace(go.Bar(name='En contra', y=df['Actor'], x=df['Intensidad_contra'], orientation='h', marker_color='#EF4444'))
-    fig.update_layout(title="Implicación de Actores", barmode='stack', height=500)
-    return fig
-
-def crear_grafico_convergencias_actor(CAA, DAA, actores):
-    """Convergencias vs divergencias por actor"""
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name='Convergencias', x=actores, y=CAA.values.sum(axis=1), marker_color='#10B981'))
-    fig.add_trace(go.Bar(name='Divergencias', x=actores, y=DAA.values.sum(axis=1), marker_color='#EF4444'))
-    fig.update_layout(title='Convergencias vs Divergencias (Simple)', barmode='group', height=500)
-    return fig
-
-def crear_grafico_convergencias_ponderadas(CAA_pond, DAA_pond, actores):
-    """Convergencias vs divergencias ponderadas"""
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name='Conv. pond.', x=actores, y=CAA_pond.values.sum(axis=1), marker_color='#059669'))
-    fig.add_trace(go.Bar(name='Div. pond.', x=actores, y=DAA_pond.values.sum(axis=1), marker_color='#DC2626'))
-    fig.update_layout(title='Convergencias vs Divergencias PONDERADAS', barmode='group', height=500)
-    return fig
-
-def crear_matriz_alianzas_conflictos(CAA, DAA, ponderada=False):
-    """Matriz de alianzas/conflictos"""
-    balance = CAA - DAA
-    titulo = "Matriz de Alianzas/Conflictos " + ("PONDERADA" if ponderada else "Simple")
-    fig = go.Figure(data=go.Heatmap(
-        z=balance.values, x=balance.columns.tolist(), y=balance.index.tolist(),
-        colorscale='RdYlGn', zmid=0, text=balance.values.round(1), texttemplate="%{text}"
-    ))
-    fig.update_layout(title=titulo, height=600)
-    return fig
-
-def crear_red_actores(balance_df, CAA, DAA):
-    """Red de actores"""
-    actores = balance_df['Actor'].tolist()
-    n = len(actores)
     angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-    pos_x, pos_y = np.cos(angles), np.sin(angles)
+    pos_x = np.cos(angles)
+    pos_y = np.sin(angles)
     
-    clasificacion, _, _ = clasificar_actores(balance_df)
-    colores = {'Dominante': '#DC2626', 'Enlace': '#7C3AED', 'Dominado': '#2563EB', 'Autónomo': '#D97706'}
-    node_colors = [colores[c] for c in clasificacion]
+    edge_x = []
+    edge_y = []
     
-    Ii = balance_df['Ii'].values
-    node_sizes = 20 + (Ii / max(Ii.max(), 1)) * 30
-    
-    edge_x, edge_y = [], []
-    balance_neto = (CAA - DAA).values
     for i in range(n):
-        for j in range(i+1, n):
-            if balance_neto[i, j] > 2:
+        for j in range(n):
+            if i != j and M[i, j] >= umbral:
                 edge_x.extend([pos_x[i], pos_x[j], None])
                 edge_y.extend([pos_y[i], pos_y[j], None])
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(width=1, color='rgba(16,185,129,0.4)'), hoverinfo='none'))
-    fig.add_trace(go.Scatter(x=pos_x, y=pos_y, mode='markers+text', marker=dict(size=node_sizes, color=node_colors), text=actores, textposition='top center'))
-    fig.update_layout(title="Red de Actores", showlegend=False, xaxis=dict(showgrid=False, zeroline=False, showticklabels=False), yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), height=600)
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=1, color='rgba(150,150,150,0.5)'),
+        hoverinfo='none',
+        mode='lines',
+        name='Influencias'
+    )
+    
+    influencia_recibida = M.sum(axis=0)
+    node_sizes = 15 + (influencia_recibida / max(influencia_recibida.max(), 1)) * 30
+    motricidad = M.sum(axis=1)
+    
+    hover_text = [f"<b>{codigos[i]}</b><br>{nombres[i]}<br>Influencia recibida: {influencia_recibida[i]:.0f}" for i in range(n)]
+    
+    node_trace = go.Scatter(
+        x=pos_x, y=pos_y,
+        mode='markers+text',
+        hoverinfo='text',
+        text=etiquetas,
+        textposition='top center',
+        hovertext=hover_text,
+        marker=dict(
+            size=node_sizes,
+            color=motricidad,
+            colorscale='YlOrRd',
+            showscale=True,
+            colorbar=dict(title="Motricidad"),
+            line=dict(width=2, color='white')
+        ),
+        name='Variables'
+    )
+    
+    fig = go.Figure(data=[edge_trace, node_trace],
+        layout=go.Layout(
+            title=f'Red de Influencias Fuertes (≥{umbral})',
+            showlegend=False,
+            hovermode='closest',
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            height=600
+        ))
+    
     return fig
 
-def crear_grafico_radar_actores(balance_df, top_n=6):
-    """Radar de actores"""
-    if 'Ii' not in balance_df.columns or len(balance_df) == 0:
-        return go.Figure().add_annotation(text="Sin datos", showarrow=False)
+def crear_grafico_estabilidad(M, nombres, codigos, alpha=0.5, usar_codigos=True):
+    """Gráfico de estabilidad del ranking por K"""
+    etiquetas = codigos if usar_codigos else nombres
     
-    df = balance_df.nlargest(top_n, 'Ii').copy()
-    df['Ii_norm'] = df['Ii'] / (df['Ii'].max() + 0.001)
-    df['Di_norm'] = df['Di'] / (df['Di'].max() + 0.001)
-    df['Ri_norm'] = (df['Ri'] - df['Ri'].min()) / (df['Ri'].max() - df['Ri'].min() + 0.001)
+    data = []
+    for K in range(1, 6):
+        if K == 1:
+            MIDI = M.copy()
+        else:
+            MIDI = calcular_midi(M, alpha=alpha, K=K)
+        mot, _ = calcular_motricidad_dependencia(MIDI)
+        
+        rankings = len(mot) - np.argsort(np.argsort(mot))
+        for i, (nombre, rank) in enumerate(zip(etiquetas, rankings)):
+            data.append({'K': K, 'Variable': nombre, 'Ranking': rank, 'Motricidad': mot[i]})
+    
+    df = pd.DataFrame(data)
+    
+    top_vars = df[df['K'] == 5].nlargest(10, 'Motricidad')['Variable'].tolist()
+    df_top = df[df['Variable'].isin(top_vars)]
+    
+    fig = px.line(df_top, x='K', y='Ranking', color='Variable',
+        title='Estabilidad del Ranking (Top 10) según Profundidad K',
+        labels={'K': 'Profundidad K', 'Ranking': 'Posición en Ranking'},
+        markers=True)
+    
+    fig.update_yaxes(autorange="reversed")
+    fig.update_layout(height=500)
+    
+    return fig
+
+def crear_grafico_distribucion_cuadrantes(clasificacion, titulo="Distribución de Variables"):
+    """Gráfico de distribución por cuadrantes"""
+    conteo = pd.Series(clasificacion).value_counts()
+    
+    colores = {
+        'Motrices': '#FF4444', 'Determinantes': '#FF4444',
+        'Enlace': '#1166CC', 'Clave': '#1166CC',
+        'Resultado': '#66BBFF', 'Variables resultado': '#66BBFF',
+        'Autónomas': '#FF9944'
+    }
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=conteo.index,
+        values=conteo.values,
+        hole=0.4,
+        marker_colors=[colores.get(c, '#999') for c in conteo.index],
+        textinfo='label+percent+value'
+    )])
+    
+    fig.update_layout(title=titulo, height=400)
+    
+    return fig
+
+def crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos=True):
+    """Gráfico de barras de las relaciones más fuertes"""
+    etiquetas = codigos if usar_codigos else nombres
+    
+    relaciones = []
+    for i in range(len(M)):
+        for j in range(len(M)):
+            if i != j and M[i, j] > 0:
+                relaciones.append({
+                    'Par': f"{etiquetas[i]} → {etiquetas[j]}",
+                    'Intensidad': M[i, j],
+                    'Detalle': f"{nombres[i]} → {nombres[j]}"
+                })
+    
+    df = pd.DataFrame(relaciones).nlargest(top_n, 'Intensidad')
+    
+    fig = px.bar(df, x='Intensidad', y='Par', orientation='h',
+        title=f'Top {top_n} Relaciones de Influencia Más Fuertes',
+        color='Intensidad',
+        color_continuous_scale='Reds',
+        hover_data=['Detalle'])
+    
+    fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
+    
+    return fig
+
+def crear_grafico_inestabilidad(df_resultados):
+    """Gráfico de índice de inestabilidad"""
+    df = df_resultados.copy()
+    df['Inestabilidad'] = df['Motricidad'] * df['Dependencia']
+    df = df.nlargest(15, 'Inestabilidad')
+    
+    fig = px.bar(df, x='Código', y='Inestabilidad',
+        title='Índice de Inestabilidad (Variables que amplifican cambios)',
+        color='Clasificación',
+        hover_data=['Variable'])
+    
+    fig.update_layout(height=400)
+    
+    return fig
+
+def crear_grafico_desplazamiento_ranking(df_directo, df_indirecto, tipo='Motricidad'):
+    """
+    Crea gráfico de desplazamiento de ranking estilo LIPSOR - VERSIÓN MEJORADA
+    Muestra cómo cambian las posiciones entre análisis directo e indirecto
+    tipo: 'Motricidad' o 'Dependencia'
+    """
+    # Calcular rankings
+    df_dir = df_directo.copy()
+    df_ind = df_indirecto.copy()
+    
+    df_dir['Rank_Dir'] = df_dir[tipo].rank(ascending=False, method='first').astype(int)
+    df_ind['Rank_Ind'] = df_ind[tipo].rank(ascending=False, method='first').astype(int)
+    
+    # Merge para comparar
+    df_comp = pd.merge(
+        df_dir[['Código', 'Variable', 'Rank_Dir', tipo]],
+        df_ind[['Código', 'Rank_Ind']],
+        on='Código'
+    )
+    
+    # Calcular cambio (positivo = subió en ranking, negativo = bajó)
+    df_comp['Cambio'] = df_comp['Rank_Dir'] - df_comp['Rank_Ind']
+    
+    # Ordenar por ranking directo
+    df_comp = df_comp.sort_values('Rank_Dir')
+    
+    n = len(df_comp)
     
     fig = go.Figure()
-    for _, row in df.iterrows():
-        fig.add_trace(go.Scatterpolar(
-            r=[row['Ii_norm'], row['Di_norm'], row['Ri_norm'], row['Ii_norm']],
-            theta=['Influencia', 'Dependencia', 'Ratio', 'Influencia'],
-            name=row['Actor'], fill='toself', opacity=0.6
+    
+    # Dibujar líneas de conexión
+    for _, row in df_comp.iterrows():
+        # Color según si subió (verde) o bajó (rojo)
+        if row['Cambio'] > 0:
+            color = '#22C55E'  # Verde
+            width = min(1.5 + abs(row['Cambio']) * 0.15, 3.5)
+        elif row['Cambio'] < 0:
+            color = '#EF4444'  # Rojo
+            width = min(1.5 + abs(row['Cambio']) * 0.15, 3.5)
+        else:
+            color = '#9CA3AF'  # Gris
+            width = 1
+        
+        fig.add_trace(go.Scatter(
+            x=[0, 1],
+            y=[row['Rank_Dir'], row['Rank_Ind']],
+            mode='lines',
+            line=dict(color=color, width=width),
+            hoverinfo='text',
+            hovertext=f"{row['Código']}: Pos {row['Rank_Dir']} → {row['Rank_Ind']} ({'+' if row['Cambio'] > 0 else ''}{row['Cambio']})",
+            showlegend=False,
+            opacity=0.7
         ))
-    fig.update_layout(title=f"Radar Top {top_n} Actores", polar=dict(radialaxis=dict(range=[0, 1])), height=500)
+    
+    # Agregar puntos lado izquierdo (Directo) - SIN texto superpuesto
+    fig.add_trace(go.Scatter(
+        x=[0] * n,
+        y=df_comp['Rank_Dir'],
+        mode='markers',
+        marker=dict(size=8, color='#1E3A8A', line=dict(width=1, color='white')),
+        hovertemplate='<b>%{customdata[0]}</b><br>Rank: %{y}<br>Valor: %{customdata[1]:.0f}<extra></extra>',
+        customdata=list(zip(df_comp['Código'], df_comp[tipo])),
+        showlegend=False
+    ))
+    
+    # Agregar puntos lado derecho (Indirecto) - SIN texto superpuesto
+    fig.add_trace(go.Scatter(
+        x=[1] * n,
+        y=df_comp['Rank_Ind'],
+        mode='markers',
+        marker=dict(size=8, color='#DC2626', line=dict(width=1, color='white')),
+        hovertemplate='<b>%{customdata}</b><br>Rank: %{y}<extra></extra>',
+        customdata=df_comp['Código'],
+        showlegend=False
+    ))
+    
+    # Agregar etiquetas como anotaciones (mejor control de posición)
+    for _, row in df_comp.iterrows():
+        # Etiqueta izquierda (Directo)
+        fig.add_annotation(
+            x=-0.02, y=row['Rank_Dir'],
+            text=f"{row['Rank_Dir']}. {row['Código']}",
+            showarrow=False,
+            xanchor='right',
+            font=dict(size=8, color='#1E3A8A', family='Arial'),
+        )
+        # Etiqueta derecha (Indirecto)
+        fig.add_annotation(
+            x=1.02, y=row['Rank_Ind'],
+            text=f"{row['Código']} .{row['Rank_Ind']}",
+            showarrow=False,
+            xanchor='left',
+            font=dict(size=8, color='#DC2626', family='Arial'),
+        )
+    
+    # Configurar layout con más altura
+    fig.update_layout(
+        title=dict(
+            text=f"<b>RANKING {tipo.upper()}</b><br><sup>Directo → Indirecto</sup>",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=12)
+        ),
+        xaxis=dict(
+            tickvals=[0, 1],
+            ticktext=['<b>DIRECTO</b>', '<b>INDIRECTO</b>'],
+            range=[-0.35, 1.35],
+            showgrid=False,
+            tickfont=dict(size=10)
+        ),
+        yaxis=dict(
+            title='',
+            autorange='reversed',  # Rank 1 arriba
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.05)',
+            dtick=1,  # Marca cada posición
+            range=[0, n + 1],
+            tickfont=dict(size=8)
+        ),
+        height=max(700, n * 24),  # Más altura para separar
+        margin=dict(l=120, r=120, t=60, b=40),
+        showlegend=False,
+        plot_bgcolor='#FEFEFE',
+        paper_bgcolor='white'
+    )
+    
+    return fig
+
+def crear_grafo_influencias(M, codigos, nombres, top_n=30, mostrar_valores=True):
+    """
+    Crea grafo de influencias estilo LIPSOR - VERSIÓN MEJORADA
+    Solo muestra las TOP N conexiones más fuertes para mejor legibilidad
+    """
+    import numpy as np
+    
+    n = len(codigos)
+    
+    # Extraer TODAS las relaciones con su valor
+    relaciones = []
+    for i in range(n):
+        for j in range(n):
+            if i != j and M[i, j] > 0:
+                relaciones.append({
+                    'origen': i,
+                    'destino': j,
+                    'valor': M[i, j],
+                    'cod_origen': codigos[i],
+                    'cod_destino': codigos[j]
+                })
+    
+    # Ordenar por valor y tomar solo las TOP N
+    relaciones = sorted(relaciones, key=lambda x: x['valor'], reverse=True)[:top_n]
+    
+    if len(relaciones) == 0:
+        fig = go.Figure()
+        fig.add_annotation(text="No hay relaciones para mostrar", x=0.5, y=0.5, showarrow=False)
+        return fig
+    
+    # Valores para escala de colores
+    valores = [r['valor'] for r in relaciones]
+    max_val = max(valores)
+    min_val = min(valores)
+    rango = max_val - min_val if max_val > min_val else 1
+    
+    # Identificar qué nodos participan en las relaciones mostradas
+    nodos_activos = set()
+    for r in relaciones:
+        nodos_activos.add(r['origen'])
+        nodos_activos.add(r['destino'])
+    
+    nodos_activos = list(nodos_activos)
+    n_activos = len(nodos_activos)
+    
+    # Posiciones de nodos en círculo más grande
+    angles = np.linspace(0, 2 * np.pi, n_activos, endpoint=False)
+    # Rotar para que el primero esté arriba
+    angles = angles - np.pi/2
+    
+    pos_x = {nodos_activos[i]: np.cos(angles[i]) * 12 for i in range(n_activos)}
+    pos_y = {nodos_activos[i]: np.sin(angles[i]) * 12 for i in range(n_activos)}
+    
+    fig = go.Figure()
+    
+    # Dibujar aristas (de menor a mayor para que las fuertes queden encima)
+    for r in reversed(relaciones):
+        valor = r['valor']
+        ratio = (valor - min_val) / rango if rango > 0 else 0.5
+        
+        # Clasificación por intensidad (basada en posición en el ranking)
+        if valor == 3:  # Influencia fuerte (valor máximo en escala MICMAC)
+            color = 'red'
+            width = 3
+        elif valor >= 2:  # Influencia moderada-fuerte
+            color = 'blue'
+            width = 2
+        else:  # Influencia débil
+            color = 'gray'
+            width = 1
+        
+        i, j = r['origen'], r['destino']
+        
+        # Dibujar línea
+        fig.add_trace(go.Scatter(
+            x=[pos_x[i], pos_x[j]],
+            y=[pos_y[i], pos_y[j]],
+            mode='lines',
+            line=dict(color=color, width=width),
+            hoverinfo='text',
+            hovertext=f"{codigos[i]} → {codigos[j]}: {valor:.0f}",
+            showlegend=False,
+            opacity=0.7
+        ))
+        
+        # Mostrar valor en el medio si está habilitado
+        if mostrar_valores:
+            mid_x = (pos_x[i] + pos_x[j]) / 2
+            mid_y = (pos_y[i] + pos_y[j]) / 2
+            fig.add_annotation(
+                x=mid_x, y=mid_y,
+                text=f"{valor:.0f}",
+                showarrow=False,
+                font=dict(size=8, color='black'),
+                bgcolor='rgba(255,255,255,0.8)',
+                borderpad=2
+            )
+    
+    # Calcular motricidad para tamaño de nodos
+    motricidad = M.sum(axis=1)
+    max_mot = motricidad.max() if motricidad.max() > 0 else 1
+    
+    # Dibujar nodos
+    node_x = [pos_x[i] for i in nodos_activos]
+    node_y = [pos_y[i] for i in nodos_activos]
+    node_text = [codigos[i] for i in nodos_activos]
+    node_sizes = [30 + (motricidad[i] / max_mot) * 25 for i in nodos_activos]
+    node_hover = [f"<b>{codigos[i]}</b><br>{nombres[i]}<br>Motricidad: {motricidad[i]:.0f}" 
+                  for i in nodos_activos]
+    
+    fig.add_trace(go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode='markers+text',
+        marker=dict(
+            size=node_sizes,
+            color='white',
+            line=dict(color='#333', width=2)
+        ),
+        text=node_text,
+        textposition='middle center',
+        textfont=dict(size=10, color='black', family='Arial Black'),
+        hovertext=node_hover,
+        hoverinfo='text',
+        showlegend=False
+    ))
+    
+    # Contar relaciones por tipo para la leyenda
+    n_fuertes = sum(1 for r in relaciones if r['valor'] == 3)
+    n_moderadas = sum(1 for r in relaciones if r['valor'] == 2)
+    n_debiles = sum(1 for r in relaciones if r['valor'] < 2)
+    
+    fig.update_layout(
+        title=dict(
+            text=f"<b>GRAFO DE INFLUENCIAS POTENCIALES DIRECTAS</b><br><sup>Top {len(relaciones)} relaciones más fuertes | 🔴 Fuerte (3): {n_fuertes} | 🔵 Moderada (2): {n_moderadas} | ⚫ Débil (1): {n_debiles}</sup>",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=14)
+        ),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-16, 16]),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-16, 16]),
+        height=750,
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(l=20, r=20, t=80, b=20)
+    )
+    
+    return fig
+
+def crear_grafico_comparativo_barras(df_resultados, top_n=15):
+    """Gráfico de barras comparativo Motricidad vs Dependencia"""
+    df = df_resultados.nlargest(top_n, 'Motricidad').copy()
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='Motricidad',
+        x=df['Código'],
+        y=df['Motricidad'],
+        marker_color='#FF6B6B',
+        hovertext=df['Variable'],
+        hovertemplate='<b>%{hovertext}</b><br>Motricidad: %{y:.1f}<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='Dependencia',
+        x=df['Código'],
+        y=df['Dependencia'],
+        marker_color='#4ECDC4',
+        hovertext=df['Variable'],
+        hovertemplate='<b>%{hovertext}</b><br>Dependencia: %{y:.1f}<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        title=f'Comparativo Motricidad vs Dependencia (Top {top_n})',
+        barmode='group',
+        height=500,
+        xaxis_title='Variable',
+        yaxis_title='Valor'
+    )
+    
     return fig
 
 # ============================================================
 # GENERACIÓN DE INFORME
 # ============================================================
 
-def generar_informe_excel(datos, nombre):
-    """Genera Excel completo"""
+def generar_informe_excel(res_directo, res_indirecto, nombres, codigos, M, nombre_proyecto):
+    """Genera informe completo en Excel con análisis DIRECTO e INDIRECTO"""
     buffer = BytesIO()
+    
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # Resumen
-        pd.DataFrame({'Parámetro': ['Fecha', 'Proyecto'], 'Valor': [datetime.now().strftime('%Y-%m-%d'), nombre]}).to_excel(writer, sheet_name='Resumen', index=False)
+        # Resumen ejecutivo
+        resumen = pd.DataFrame({
+            'Parámetro': [
+                'Fecha de análisis', 'Nombre del proyecto', 'Total de variables',
+                'Alpha (α)', 'K (profundidad)',
+                '--- ANÁLISIS DIRECTO ---', '',
+                'Motrices (Directo)', 'Enlace (Directo)', 'Resultado (Directo)', 'Autónomas (Directo)',
+                '--- ANÁLISIS INDIRECTO ---', '',
+                'Determinantes (Indirecto)', 'Clave (Indirecto)', 'Resultado (Indirecto)', 'Autónomas (Indirecto)',
+                '---', 'Densidad de la matriz (%)'
+            ],
+            'Valor': [
+                datetime.now().strftime('%Y-%m-%d %H:%M'), nombre_proyecto, len(nombres),
+                res_indirecto['alpha'], res_indirecto['K'],
+                '', '',
+                sum(c == 'Motrices' for c in res_directo['clasificacion']),
+                sum(c == 'Enlace' for c in res_directo['clasificacion']),
+                sum(c == 'Resultado' for c in res_directo['clasificacion']),
+                sum(c == 'Autónomas' for c in res_directo['clasificacion']),
+                '', '',
+                sum(c == 'Determinantes' for c in res_indirecto['clasificacion']),
+                sum(c == 'Clave' for c in res_indirecto['clasificacion']),
+                sum(c == 'Variables resultado' for c in res_indirecto['clasificacion']),
+                sum(c == 'Autónomas' for c in res_indirecto['clasificacion']),
+                '', round((M != 0).sum() / M.size * 100, 1)
+            ]
+        })
+        resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
         
-        for key, sheet in [('balance', 'Balance_Actores'), ('MAA', 'MAA'), ('MIDI', 'MIDI'), ('MAO_2', '2MAO'), ('MAO_3', '3MAO'),
-                          ('CAA', 'Convergencias'), ('DAA', 'Divergencias'), ('CAA_pond', 'Conv_Pond'), ('DAA_pond', 'Div_Pond'),
-                          ('balance_objetivos', 'Balance_Obj'), ('implicacion_actores', 'Implicacion')]:
-            if key in datos and datos[key] is not None:
-                if isinstance(datos[key], pd.DataFrame) and len(datos[key]) > 0:
-                    datos[key].to_excel(writer, sheet_name=sheet, index=(key not in ['balance', 'balance_objetivos', 'implicacion_actores']))
+        # Ranking DIRECTO
+        res_directo['df_resultados'].to_excel(writer, sheet_name='Ranking DIRECTO', index=False)
+        
+        # Ranking INDIRECTO
+        res_indirecto['df_resultados'].to_excel(writer, sheet_name='Ranking INDIRECTO', index=False)
+        
+        # Comparación Directo vs Indirecto
+        df_comp = comparar_directo_indirecto(res_directo['df_resultados'], res_indirecto['df_resultados'])
+        df_comp.to_excel(writer, sheet_name='Comparación Dir-Indir', index=False)
+        
+        # Variables por cuadrante DIRECTO
+        for cuadrante in ['Motrices', 'Enlace', 'Resultado', 'Autónomas']:
+            df_cuad = res_directo['df_resultados'][res_directo['df_resultados']['Clasificación'] == cuadrante]
+            if len(df_cuad) > 0:
+                df_cuad.to_excel(writer, sheet_name=f'Dir_{cuadrante[:10]}', index=False)
+        
+        # Variables por cuadrante INDIRECTO
+        for cuadrante in ['Determinantes', 'Clave', 'Variables resultado', 'Autónomas']:
+            df_cuad = res_indirecto['df_resultados'][res_indirecto['df_resultados']['Clasificación'] == cuadrante]
+            if len(df_cuad) > 0:
+                nombre_hoja = f'Ind_{cuadrante[:10]}'
+                df_cuad.to_excel(writer, sheet_name=nombre_hoja, index=False)
+        
+        # Matriz MID Original
+        pd.DataFrame(M, index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MID Original')
+        
+        # Matriz MIDI
+        pd.DataFrame(res_indirecto['MIDI'], index=codigos, columns=codigos).to_excel(writer, sheet_name='Matriz MIDI')
+        
+        # Relaciones fuertes
+        relaciones = identificar_relaciones_fuertes(M, codigos, umbral=2)
+        if relaciones:
+            pd.DataFrame(relaciones).to_excel(writer, sheet_name='Relaciones Fuertes', index=False)
+        
+        # Diccionario de códigos
+        pd.DataFrame({'Código': codigos, 'Variable': nombres}).to_excel(writer, sheet_name='Diccionario', index=False)
+        
+        # Análisis estratégico
+        df_estrategico = res_indirecto['df_resultados'].copy()
+        df_estrategico['Valor_Estratégico'] = df_estrategico['Motricidad'] + df_estrategico['Dependencia']
+        df_estrategico['Índice_Inestabilidad'] = df_estrategico['Motricidad'] * df_estrategico['Dependencia']
+        df_estrategico = df_estrategico.sort_values('Valor_Estratégico', ascending=False)
+        df_estrategico.to_excel(writer, sheet_name='Análisis Estratégico', index=False)
     
     buffer.seek(0)
     return buffer
 
-def generar_informe_pdf(datos, nombre_proyecto):
-    """Genera informe PDF completo con análisis y tablas (sin dependencia de Chrome/Kaleido)"""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.lib.colors import HexColor
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-    from reportlab.lib import colors
-    
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
-    
-    styles = getSampleStyleSheet()
-    
-    # Estilos personalizados
-    styles.add(ParagraphStyle(name='TituloInforme', parent=styles['Title'], fontSize=24, textColor=HexColor('#8B5CF6'), spaceAfter=30))
-    styles.add(ParagraphStyle(name='Subtitulo', parent=styles['Heading1'], fontSize=16, textColor=HexColor('#4C1D95'), spaceBefore=20, spaceAfter=10))
-    styles.add(ParagraphStyle(name='Seccion', parent=styles['Heading2'], fontSize=14, textColor=HexColor('#6D28D9'), spaceBefore=15, spaceAfter=8))
-    styles.add(ParagraphStyle(name='Cuerpo', parent=styles['Normal'], fontSize=10, spaceAfter=8, leading=14))
-    styles.add(ParagraphStyle(name='Destacado', parent=styles['Normal'], fontSize=10, textColor=HexColor('#DC2626'), spaceAfter=6))
-    styles.add(ParagraphStyle(name='Positivo', parent=styles['Normal'], fontSize=10, textColor=HexColor('#059669'), spaceAfter=6))
-    
-    story = []
-    
-    # ============ PORTADA ============
-    story.append(Spacer(1, 3*cm))
-    story.append(Paragraph("INFORME MACTOR", styles['TituloInforme']))
-    story.append(Paragraph("Método de Análisis de Actores", styles['Subtitulo']))
-    story.append(Spacer(1, 1*cm))
-    story.append(Paragraph(f"<b>Proyecto:</b> {nombre_proyecto}", styles['Cuerpo']))
-    story.append(Paragraph(f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Cuerpo']))
-    story.append(Paragraph(f"<b>Actores analizados:</b> {len(datos.get('actores', []))}", styles['Cuerpo']))
-    story.append(Paragraph(f"<b>Objetivos estratégicos:</b> {len(datos.get('objetivos', []))}", styles['Cuerpo']))
-    story.append(Spacer(1, 2*cm))
-    story.append(Paragraph("Metodología Michel Godet (LIPSOR)", styles['Cuerpo']))
-    story.append(Paragraph("Generado por MACTOR PRO v4.2 - JETLEX Strategic Consulting", styles['Cuerpo']))
-    story.append(PageBreak())
-    
-    # ============ ÍNDICE ============
-    story.append(Paragraph("ÍNDICE", styles['Subtitulo']))
-    story.append(Paragraph("1. Resumen Ejecutivo", styles['Cuerpo']))
-    story.append(Paragraph("2. Análisis de Actores (MIDI)", styles['Cuerpo']))
-    story.append(Paragraph("3. Análisis de Objetivos (MAO)", styles['Cuerpo']))
-    story.append(Paragraph("4. Convergencias y Divergencias", styles['Cuerpo']))
-    story.append(Paragraph("5. Síntesis Estratégica", styles['Cuerpo']))
-    story.append(Paragraph("6. Recomendaciones", styles['Cuerpo']))
-    story.append(PageBreak())
-    
-    # ============ 1. RESUMEN EJECUTIVO ============
-    story.append(Paragraph("1. RESUMEN EJECUTIVO", styles['Subtitulo']))
-    
-    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
-        bal = datos['balance']
-        
-        # Contar clasificaciones
-        n_dom = len(bal[bal.get('Clasificación', pd.Series()) == 'Dominante']) if 'Clasificación' in bal.columns else 0
-        n_enl = len(bal[bal.get('Clasificación', pd.Series()) == 'Enlace']) if 'Clasificación' in bal.columns else 0
-        n_domd = len(bal[bal.get('Clasificación', pd.Series()) == 'Dominado']) if 'Clasificación' in bal.columns else 0
-        n_aut = len(bal[bal.get('Clasificación', pd.Series()) == 'Autónomo']) if 'Clasificación' in bal.columns else 0
-        
-        story.append(Paragraph(f"El análisis MACTOR identifica <b>{len(datos.get('actores', []))} actores</b> en el sistema estratégico:", styles['Cuerpo']))
-        story.append(Spacer(1, 0.3*cm))
-        
-        # Tabla resumen de clasificación
-        tabla_clasif = [
-            ['Clasificación', 'Cantidad', 'Características'],
-            ['Dominantes', str(n_dom), 'Alta influencia, baja dependencia'],
-            ['Enlace', str(n_enl), 'Alta influencia y alta dependencia'],
-            ['Dominados', str(n_domd), 'Baja influencia, alta dependencia'],
-            ['Autónomos', str(n_aut), 'Baja influencia y dependencia'],
-        ]
-        t = Table(tabla_clasif, colWidths=[3.5*cm, 2.5*cm, 8*cm])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#8B5CF6')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#F5F3FF')]),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 0.5*cm))
-        
-        if 'Ri_neto' in bal.columns:
-            story.append(Paragraph("<b>Top 5 Actores más Influyentes:</b>", styles['Seccion']))
-            for i, (_, r) in enumerate(bal.nlargest(5, 'Ri_neto').iterrows(), 1):
-                story.append(Paragraph(f"{i}. <b>{r['Actor']}</b>: Influencia={r['Ii']:.0f}, Dependencia={r['Di']:.0f}, Balance=<b>+{r['Ri_neto']:.0f}</b>", styles['Positivo']))
-            
-            story.append(Spacer(1, 0.3*cm))
-            story.append(Paragraph("<b>Actores más Dependientes:</b>", styles['Seccion']))
-            for i, (_, r) in enumerate(bal.nsmallest(3, 'Ri_neto').iterrows(), 1):
-                story.append(Paragraph(f"{i}. <b>{r['Actor']}</b>: Balance=<b>{r['Ri_neto']:.0f}</b>", styles['Destacado']))
-    
-    story.append(PageBreak())
-    
-    # ============ 2. ANÁLISIS DE ACTORES ============
-    story.append(Paragraph("2. ANÁLISIS DE ACTORES (MIDI)", styles['Subtitulo']))
-    
-    story.append(Paragraph("La Matriz de Influencias Directas e Indirectas (MIDI) permite identificar las relaciones de poder entre los actores del sistema. El parámetro K determina la profundidad del análisis de influencias indirectas.", styles['Cuerpo']))
-    story.append(Spacer(1, 0.3*cm))
-    
-    # Tabla completa de actores
-    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
-        bal = datos['balance']
-        story.append(Paragraph("<b>Tabla de Relaciones de Fuerza:</b>", styles['Seccion']))
-        
-        tabla_data = [['Actor', 'Ii', 'Di', 'Ri', 'Balance', 'Clasificación']]
-        for _, r in bal.iterrows():
-            clasif = r.get('Clasificación', 'N/A')
-            tabla_data.append([
-                r['Actor'], 
-                f"{r['Ii']:.0f}", 
-                f"{r['Di']:.0f}", 
-                f"{r['Ri']:.2f}",
-                f"{r['Ri_neto']:+.0f}", 
-                clasif
-            ])
-        
-        tabla = Table(tabla_data, colWidths=[4*cm, 1.8*cm, 1.8*cm, 1.8*cm, 2*cm, 3*cm])
-        tabla.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#8B5CF6')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('ALIGN', (1, 0), (-2, -1), 'CENTER'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#F5F3FF')]),
-        ]))
-        story.append(tabla)
-        
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph("<b>Interpretación:</b>", styles['Seccion']))
-        story.append(Paragraph("• <b>Ii (Influencia):</b> Suma de las influencias que ejerce el actor sobre los demás.", styles['Cuerpo']))
-        story.append(Paragraph("• <b>Di (Dependencia):</b> Suma de las influencias que recibe el actor de los demás.", styles['Cuerpo']))
-        story.append(Paragraph("• <b>Ri (Ratio):</b> Ii/Di - Valores >1 indican actor influyente.", styles['Cuerpo']))
-        story.append(Paragraph("• <b>Balance:</b> Ii-Di - Positivo=dominante, Negativo=dominado.", styles['Cuerpo']))
-    
-    story.append(PageBreak())
-    
-    # ============ 3. ANÁLISIS DE OBJETIVOS ============
-    story.append(Paragraph("3. ANÁLISIS DE OBJETIVOS (MAO)", styles['Subtitulo']))
-    
-    story.append(Paragraph("La matriz 2MAO identifica las posiciones de cada actor respecto a cada objetivo estratégico, en una escala de -3 (oposición vital) a +3 (apoyo vital).", styles['Cuerpo']))
-    
-    if 'balance_objetivos' in datos and isinstance(datos['balance_objetivos'], pd.DataFrame):
-        bal_obj = datos['balance_objetivos']
-        
-        # Objetivos más viables
-        story.append(Paragraph("<b>Objetivos con Mayor Viabilidad:</b>", styles['Seccion']))
-        for i, (_, r) in enumerate(bal_obj.nlargest(5, 'Viabilidad').iterrows(), 1):
-            story.append(Paragraph(f"{i}. <b>{r['Objetivo']}</b>: {r['A_favor']} a favor, {r['En_contra']} en contra, Viabilidad=<b>{r['Viabilidad']:+.2f}</b>", styles['Positivo']))
-        
-        # Objetivos bloqueados
-        story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph("<b>Objetivos Bloqueados o Conflictivos:</b>", styles['Seccion']))
-        for i, (_, r) in enumerate(bal_obj.nsmallest(5, 'Viabilidad').iterrows(), 1):
-            story.append(Paragraph(f"{i}. <b>{r['Objetivo']}</b>: {r['A_favor']} a favor, {r['En_contra']} en contra, Viabilidad=<b>{r['Viabilidad']:+.2f}</b>", styles['Destacado']))
-        
-        # Tabla completa de objetivos
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph("<b>Tabla Completa de Objetivos:</b>", styles['Seccion']))
-        
-        tabla_data = [['Obj', '+', '0', '-', 'Balance', 'Movil.', 'Viabil.']]
-        for _, r in bal_obj.iterrows():
-            tabla_data.append([
-                r['Objetivo'], 
-                str(r['A_favor']), 
-                str(r['Neutros']),
-                str(r['En_contra']), 
-                f"{r['Balance_ponderado']:+.1f}",
-                f"{r['Movilizacion']:.0f}",
-                f"{r['Viabilidad']:+.2f}"
-            ])
-        
-        # Dividir en dos tablas si hay muchos objetivos
-        n_obj = len(tabla_data) - 1
-        if n_obj <= 15:
-            tabla = Table(tabla_data, colWidths=[1.8*cm, 1.2*cm, 1.2*cm, 1.2*cm, 2*cm, 1.8*cm, 2*cm])
-            tabla.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#10B981')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(tabla)
-        else:
-            # Primera mitad
-            mid = n_obj // 2 + 1
-            tabla1 = Table(tabla_data[:mid+1], colWidths=[1.8*cm, 1.2*cm, 1.2*cm, 1.2*cm, 2*cm, 1.8*cm, 2*cm])
-            tabla1.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#10B981')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(tabla1)
-            story.append(Spacer(1, 0.3*cm))
-            
-            # Segunda mitad
-            tabla2_data = [tabla_data[0]] + tabla_data[mid+1:]
-            tabla2 = Table(tabla2_data, colWidths=[1.8*cm, 1.2*cm, 1.2*cm, 1.2*cm, 2*cm, 1.8*cm, 2*cm])
-            tabla2.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#10B981')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(tabla2)
-    
-    story.append(PageBreak())
-    
-    # ============ 4. CONVERGENCIAS Y DIVERGENCIAS ============
-    story.append(Paragraph("4. CONVERGENCIAS Y DIVERGENCIAS", styles['Subtitulo']))
-    
-    story.append(Paragraph("El análisis de convergencias y divergencias identifica alianzas naturales (actores que comparten posiciones en múltiples objetivos) y rivalidades (posiciones opuestas).", styles['Cuerpo']))
-    
-    if 'CAA_pond' in datos and 'DAA_pond' in datos:
-        CAA_pond = datos['CAA_pond']
-        DAA_pond = datos['DAA_pond']
-        balance_mat = CAA_pond - DAA_pond
-        actores = datos.get('actores', [])
-        
-        alianzas, conflictos = [], []
-        for i in range(len(actores)):
-            for j in range(i+1, len(actores)):
-                v = balance_mat.iloc[i, j]
-                if v > 2: alianzas.append((actores[i], actores[j], v))
-                elif v < 0: conflictos.append((actores[i], actores[j], v))
-        
-        # Alianzas principales
-        story.append(Paragraph("<b>Principales Alianzas Estratégicas:</b>", styles['Seccion']))
-        story.append(Paragraph("Pares de actores con alta convergencia de intereses:", styles['Cuerpo']))
-        
-        if alianzas:
-            tabla_alianzas = [['Actor 1', 'Actor 2', 'Intensidad']]
-            for a1, a2, v in sorted(alianzas, key=lambda x: -x[2])[:10]:
-                tabla_alianzas.append([a1, a2, f"+{v:.1f}"])
-            
-            t = Table(tabla_alianzas, colWidths=[5*cm, 5*cm, 3*cm])
-            t.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#059669')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('ALIGN', (2, 0), (2, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(t)
-        else:
-            story.append(Paragraph("No se identificaron alianzas significativas.", styles['Cuerpo']))
-        
-        # Conflictos principales
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph("<b>Principales Conflictos:</b>", styles['Seccion']))
-        story.append(Paragraph("Pares de actores con posiciones divergentes:", styles['Cuerpo']))
-        
-        if conflictos:
-            tabla_conflictos = [['Actor 1', 'Actor 2', 'Intensidad']]
-            for a1, a2, v in sorted(conflictos, key=lambda x: x[2])[:10]:
-                tabla_conflictos.append([a1, a2, f"{v:.1f}"])
-            
-            t = Table(tabla_conflictos, colWidths=[5*cm, 5*cm, 3*cm])
-            t.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#DC2626')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('ALIGN', (2, 0), (2, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(t)
-        else:
-            story.append(Paragraph("No se identificaron conflictos significativos.", styles['Cuerpo']))
-    
-    story.append(PageBreak())
-    
-    # ============ 5. SÍNTESIS ESTRATÉGICA ============
-    story.append(Paragraph("5. SÍNTESIS ESTRATÉGICA", styles['Subtitulo']))
-    
-    if 'balance' in datos and isinstance(datos['balance'], pd.DataFrame):
-        bal = datos['balance']
-        if 'Clasificación' in bal.columns:
-            dominantes = bal[bal['Clasificación'] == 'Dominante']['Actor'].tolist()
-            enlace = bal[bal['Clasificación'] == 'Enlace']['Actor'].tolist()
-            dominados = bal[bal['Clasificación'] == 'Dominado']['Actor'].tolist()
-            
-            story.append(Paragraph("<b>Actores Dominantes (clave para el éxito):</b>", styles['Seccion']))
-            if dominantes:
-                story.append(Paragraph(f"Los actores {', '.join(dominantes)} tienen el mayor poder de influencia sobre el sistema. Cualquier estrategia debe considerar primero sus intereses y posiciones.", styles['Cuerpo']))
-            else:
-                story.append(Paragraph("No se identificaron actores claramente dominantes.", styles['Cuerpo']))
-            
-            story.append(Spacer(1, 0.3*cm))
-            story.append(Paragraph("<b>Actores de Enlace (mediadores potenciales):</b>", styles['Seccion']))
-            if enlace:
-                story.append(Paragraph(f"Los actores {', '.join(enlace)} tienen alta influencia pero también alta dependencia. Pueden actuar como mediadores entre diferentes grupos de interés.", styles['Cuerpo']))
-            else:
-                story.append(Paragraph("No se identificaron actores de enlace.", styles['Cuerpo']))
-    
-    if 'balance_objetivos' in datos and isinstance(datos['balance_objetivos'], pd.DataFrame):
-        bal_obj = datos['balance_objetivos']
-        if 'Viabilidad' in bal_obj.columns:
-            viables = bal_obj[bal_obj['Viabilidad'] > 0.3]['Objetivo'].tolist()
-            bloqueados = bal_obj[bal_obj['Viabilidad'] < -0.3]['Objetivo'].tolist()
-            
-            story.append(Spacer(1, 0.3*cm))
-            story.append(Paragraph("<b>Objetivos Prioritarios (alta viabilidad):</b>", styles['Seccion']))
-            if viables:
-                story.append(Paragraph(f"Los objetivos {', '.join(viables[:7])} tienen el mayor consenso entre actores influyentes y deberían priorizarse en la estrategia.", styles['Positivo']))
-            else:
-                story.append(Paragraph("Ningún objetivo supera el umbral de alta viabilidad (>0.3).", styles['Cuerpo']))
-            
-            story.append(Spacer(1, 0.3*cm))
-            story.append(Paragraph("<b>Objetivos Bloqueados (requieren reformulación):</b>", styles['Seccion']))
-            if bloqueados:
-                story.append(Paragraph(f"Los objetivos {', '.join(bloqueados[:7])} enfrentan oposición significativa de actores influyentes. Requieren negociación o reformulación antes de su implementación.", styles['Destacado']))
-            else:
-                story.append(Paragraph("Ningún objetivo está severamente bloqueado (<-0.3).", styles['Cuerpo']))
-    
-    story.append(PageBreak())
-    
-    # ============ 6. RECOMENDACIONES ============
-    story.append(Paragraph("6. RECOMENDACIONES ESTRATÉGICAS", styles['Subtitulo']))
-    
-    story.append(Paragraph("Basado en el análisis MACTOR realizado, se formulan las siguientes recomendaciones:", styles['Cuerpo']))
-    story.append(Spacer(1, 0.5*cm))
-    
-    recomendaciones = [
-        ("Priorizar la negociación con actores dominantes", 
-         "Establecer diálogo temprano con los actores de mayor influencia. Su apoyo es determinante para el éxito de cualquier iniciativa estratégica."),
-        ("Construir coaliciones iniciales",
-         "Identificar y fortalecer alianzas entre actores con alta convergencia de intereses. Estas coaliciones pueden generar momentum positivo."),
-        ("Gestionar conflictos proactivamente",
-         "Desarrollar estrategias específicas para los pares de actores con mayor divergencia. Considerar mediación a través de actores de enlace."),
-        ("Secuenciar objetivos por viabilidad",
-         "Comenzar implementando los objetivos de mayor viabilidad para generar confianza y demostrar resultados tempranos."),
-        ("Reformular objetivos bloqueados",
-         "Los objetivos con viabilidad negativa deben ser reformulados, descompuestos en sub-objetivos, o negociados antes de intentar su implementación."),
-        ("Monitorear dinámicas de poder",
-         "Las relaciones entre actores pueden evolucionar. Actualizar periódicamente el análisis MACTOR para detectar cambios en alianzas y posiciones."),
-    ]
-    
-    for i, (titulo, texto) in enumerate(recomendaciones, 1):
-        story.append(Paragraph(f"<b>{i}. {titulo}</b>", styles['Seccion']))
-        story.append(Paragraph(texto, styles['Cuerpo']))
-        story.append(Spacer(1, 0.3*cm))
-    
-    # Pie de informe
-    story.append(Spacer(1, 1*cm))
-    story.append(Paragraph("─" * 60, styles['Cuerpo']))
-    story.append(Paragraph(f"<i>Informe generado automáticamente por MACTOR PRO v4.2</i>", styles['Cuerpo']))
-    story.append(Paragraph(f"<i>JETLEX Strategic Consulting - {datetime.now().strftime('%Y')}</i>", styles['Cuerpo']))
-    story.append(Paragraph(f"<i>Metodología: Michel Godet, LIPSOR - Prospectiva Estratégica</i>", styles['Cuerpo']))
-    
-    # Construir PDF
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
 # ============================================================
-# INTERFAZ PRINCIPAL
+# INTERFAZ DE USUARIO
 # ============================================================
 
-st.markdown('<div class="main-header">🎭 MACTOR PRO v4.1</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Método de Análisis de Actores - Michel Godet (LIPSOR)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🎯 MICMAC PRO</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Análisis Estructural - Metodología Godet (LIPSOR)</div>', unsafe_allow_html=True)
 
-# Session state
-if 'mactor_data' not in st.session_state: st.session_state.mactor_data = None
-if 'mactor_resultados' not in st.session_state: st.session_state.mactor_resultados = {}
-if 'actores_manual' not in st.session_state: st.session_state.actores_manual = None
-if 'objetivos_manual' not in st.session_state: st.session_state.objetivos_manual = None
-if 'MAA_manual' not in st.session_state: st.session_state.MAA_manual = None
-if 'MAO_manual' not in st.session_state: st.session_state.MAO_manual = None
+# Inicializar session state
+for key in ['matriz_procesada', 'nombres_variables', 'codigos_variables', 'mapeo_codigos', 
+            'resultados_directo', 'resultados_indirecto', 'hojas_excel', 'M_original']:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
-# Sidebar
 with st.sidebar:
     st.header("⚙️ Configuración")
-    modo = st.radio("Modo de entrada:", ["📁 Cargar archivo Excel", "✏️ Entrada manual"])
+    
+    st.subheader("1. Cargar Matriz")
+    uploaded_file = st.file_uploader(
+        "Subir archivo Excel",
+        type=['xlsx', 'xls'],
+        help="Soporta archivos con múltiples hojas"
+    )
+    
+    hoja_seleccionada = None
+    if uploaded_file is not None:
+        try:
+            xl_temp = pd.ExcelFile(uploaded_file)
+            st.session_state.hojas_excel = xl_temp.sheet_names
+            uploaded_file.seek(0)
+        except:
+            st.session_state.hojas_excel = None
+        
+        if st.session_state.hojas_excel and len(st.session_state.hojas_excel) > 1:
+            default_idx = 0
+            for i, hoja in enumerate(st.session_state.hojas_excel):
+                if 'MID' in hoja.upper() or 'MATRIZ' in hoja.upper():
+                    default_idx = i
+                    break
+            
+            hoja_seleccionada = st.selectbox(
+                "📑 Seleccionar hoja:",
+                st.session_state.hojas_excel,
+                index=default_idx
+            )
     
     st.divider()
     
-    if modo == "📁 Cargar archivo Excel":
-        uploaded_file = st.file_uploader("Subir archivo MACTOR", type=['xlsx', 'xls'])
+    st.subheader("2. Parámetros MICMAC")
+    alpha = st.slider("α (Alpha)", min_value=0.1, max_value=1.0, value=0.5, step=0.1)
+    K_auto = st.checkbox("K automático", value=True)
+    if not K_auto:
+        K_manual = st.slider("K - Profundidad", min_value=2, max_value=10, value=3)
     else:
-        n_actores = st.number_input("Nº actores", 2, 20, 5)
-        n_objetivos = st.number_input("Nº objetivos", 2, 40, 10)
-        if st.button("📋 Crear plantillas"):
-            st.session_state.actores_manual = [f"Actor_{i+1}" for i in range(n_actores)]
-            st.session_state.objetivos_manual = [f"O{i+1}" for i in range(n_objetivos)]
-            st.session_state.MAA_manual = pd.DataFrame(np.zeros((n_actores, n_actores)), index=st.session_state.actores_manual, columns=st.session_state.actores_manual)
-            st.session_state.MAO_manual = pd.DataFrame(np.zeros((n_actores, n_objetivos)), index=st.session_state.actores_manual, columns=st.session_state.objetivos_manual)
-            st.success("✅ Plantillas creadas")
-        uploaded_file = None
+        K_manual = 3
     
     st.divider()
-    k_midi = st.slider("K (MIDI)", 2, 5, 2)
-    mostrar_valores = st.checkbox("Mostrar valores", True)
-    top_n_radar = st.slider("Actores en radar", 4, 10, 6)
+    
+    st.subheader("3. Visualización")
+    mostrar_etiquetas = st.checkbox("Mostrar etiquetas", value=True)
+    usar_codigos = st.checkbox("Usar códigos cortos", value=True)
+    max_chars_codigo = st.slider("Longitud máx. códigos", min_value=4, max_value=15, value=10)
+    tamaño_fuente = st.slider("Tamaño fuente", min_value=8, max_value=16, value=10)
 
-# Pestañas
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📋 Datos", "👥 Actores", "🎯 Objetivos", "🤝 Convergencias", "🔬 Avanzado", "📊 Síntesis", "📥 Exportar"])
+# Pestañas principales - AHORA CON PESTAÑA DIRECTO
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "📋 Datos",
+    "📊 Análisis DIRECTO",
+    "📈 Análisis INDIRECTO",
+    "🔄 Comparación",
+    "🎯 Eje Estratégico",
+    "🔬 Avanzado",
+    "📑 Informe",
+    "📥 Exportar"
+])
 
+# ============================================================
 # TAB 1: DATOS
+# ============================================================
 with tab1:
-    st.header("📋 Carga de Datos")
+    st.header("📋 Carga y Visualización de Datos")
     
-    if modo == "📁 Cargar archivo Excel":
-        if uploaded_file:
-            resultado = procesar_archivo_mactor(uploaded_file)
-            if 'error' in resultado:
-                st.error(f"❌ {resultado['error']}")
-            else:
-                st.session_state.mactor_data = resultado
-                for msg in resultado.get('mensajes', []): st.success(msg)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("👥 Actores", len(resultado.get('actores', [])))
-                col2.metric("🎯 Objetivos", len(resultado.get('objetivos', [])))
-                col3.metric("📑 Hojas", len(resultado.get('hojas', [])))
-                
-                if resultado.get('MAA') is not None:
-                    st.subheader("Matriz MAA")
-                    st.dataframe(resultado['MAA'], height=300)
-                if resultado.get('MAO_2') is not None:
-                    st.subheader("Matriz 2MAO")
-                    st.dataframe(resultado['MAO_2'], height=300)
+    if uploaded_file is not None:
+        df_procesado, nombres, hojas, mensaje = procesar_archivo_excel(uploaded_file, hoja_seleccionada)
+        
+        if df_procesado is not None:
+            st.success(mensaje)
+            
+            codigos, mapeo = generar_codigos_y_mapeo(nombres, max_chars=max_chars_codigo)
+            
+            st.session_state.matriz_procesada = df_procesado
+            st.session_state.nombres_variables = nombres
+            st.session_state.codigos_variables = codigos
+            st.session_state.mapeo_codigos = mapeo
+            st.session_state.M_original = df_procesado.values.astype(float)
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Variables", len(nombres))
+            col2.metric("Tamaño", f"{len(nombres)}x{len(nombres)}")
+            
+            M_temp = df_procesado.values.astype(float)
+            densidad = (M_temp != 0).sum() / M_temp.size * 100
+            col3.metric("Densidad", f"{densidad:.1f}%")
+            
+            st.subheader("🏷️ Tabla de Variables y Códigos")
+            df_codigos = pd.DataFrame({
+                'Código': codigos,
+                'Variable (nombre completo)': nombres
+            })
+            st.dataframe(df_codigos, use_container_width=True, height=300)
+            
+            st.subheader("📊 Vista previa de la matriz MID")
+            st.dataframe(df_procesado, use_container_width=True, height=400)
         else:
-            st.info("👆 Sube un archivo Excel con matrices MAA y 2MAO")
+            st.error(f"❌ {mensaje}")
     else:
-        if st.session_state.actores_manual:
-            st.subheader("Editar Actores")
-            actores_editados = [st.text_input(f"A{i+1}", v, key=f"act_{i}") for i, v in enumerate(st.session_state.actores_manual)]
-            st.session_state.actores_manual = actores_editados
-            
-            st.subheader("Matriz MAA")
-            MAA_edit = st.session_state.MAA_manual.copy()
-            MAA_edit.index, MAA_edit.columns = actores_editados, actores_editados
-            st.session_state.MAA_manual = st.data_editor(MAA_edit, key="maa_ed")
-            
-            st.subheader("Matriz 2MAO")
-            MAO_edit = st.session_state.MAO_manual.copy()
-            MAO_edit.index = actores_editados
-            st.session_state.MAO_manual = st.data_editor(MAO_edit, key="mao_ed")
-            
-            if st.button("✅ Confirmar y procesar", type="primary"):
-                maa_vals = st.session_state.MAA_manual.values.copy()
-                np.fill_diagonal(maa_vals, 0)
-                st.session_state.mactor_data = {
-                    'MAA': pd.DataFrame(maa_vals, index=actores_editados, columns=actores_editados),
-                    'MAO_2': st.session_state.MAO_manual.copy(),
-                    'actores': actores_editados,
-                    'objetivos': st.session_state.objetivos_manual,
-                    'mensajes': ['✅ Datos manuales procesados']
-                }
-                st.success("✅ Datos guardados")
-        else:
-            st.warning("👈 Crea plantillas en el sidebar")
+        st.info("👆 Sube un archivo Excel con tu matriz de influencias")
 
-# TAB 2: ACTORES
+# ============================================================
+# TAB 2: ANÁLISIS DIRECTO
+# ============================================================
 with tab2:
-    st.header("👥 Análisis de Actores")
+    st.header("📊 Análisis DIRECTO (MID)")
     
-    if st.session_state.mactor_data and st.session_state.mactor_data.get('MAA') is not None:
-        data = st.session_state.mactor_data
-        MAA = data['MAA']
-        
-        MIDI = calcular_MIDI(MAA, k_midi)
-        balance = calcular_balance_MIDI(MIDI)
-        clasificacion, med_Ii, med_Di = clasificar_actores(balance)
-        balance['Clasificación'] = clasificacion
-        
-        st.session_state.mactor_resultados.update({'MIDI': MIDI, 'balance': balance, 'med_Ii': med_Ii, 'med_Di': med_Di})
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("🔴 Dominantes", sum(c == 'Dominante' for c in clasificacion))
-        col2.metric("🟣 Enlace", sum(c == 'Enlace' for c in clasificacion))
-        col3.metric("🔵 Dominados", sum(c == 'Dominado' for c in clasificacion))
-        col4.metric("🟠 Autónomos", sum(c == 'Autónomo' for c in clasificacion))
-        
-        st.dataframe(balance, use_container_width=True)
-        
-        st.subheader("Plano Influencias/Dependencias")
-        mostrar_grafico_con_descargas(crear_plano_influencias(balance, med_Ii, med_Di), "plano", "t2_1")
-        
-        st.subheader("Balance Neto")
-        mostrar_grafico_con_descargas(crear_histograma_balance(balance), "balance", "t2_2")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(crear_heatmap_matriz(MAA, "MAA", 'Blues', mostrar_valores), use_container_width=True, key="hm_maa")
-        with col2:
-            st.plotly_chart(crear_heatmap_matriz(MIDI, f"MIDI (k={k_midi})", 'Purples', mostrar_valores), use_container_width=True, key="hm_midi")
-    else:
-        st.warning("⚠️ Carga datos en la pestaña 'Datos'")
-
-# TAB 3: OBJETIVOS
-with tab3:
-    st.header("🎯 Análisis de Objetivos")
+    st.markdown("""
+    <div class="info-box">
+    <b>Análisis DIRECTO:</b> Usa la matriz original M sin transformaciones.<br>
+    • <b>Motricidad (M):</b> Suma de la fila = influencia que EJERCE la variable<br>
+    • <b>Dependencia (D):</b> Suma de la columna = influencia que RECIBE la variable<br>
+    • Valores en <b>escala original</b> (enteros pequeños, típicamente 0-100)
+    </div>
+    """, unsafe_allow_html=True)
     
-    data = st.session_state.mactor_data
-    resultados = st.session_state.mactor_resultados
-    
-    if data and data.get('MAO_2') is not None:
-        MAO_2 = data['MAO_2']
+    if st.session_state.matriz_procesada is not None:
+        M = st.session_state.M_original
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        n = M.shape[0]
         
-        # Calcular con manejo de errores
-        balance_actores = resultados.get('balance')
-        balance_obj = calcular_balance_objetivos(MAO_2, balance_actores)
-        impl_actores = calcular_implicacion_actores(MAO_2)
+        # Calcular análisis DIRECTO
+        motricidad_dir, dependencia_dir = calcular_motricidad_dependencia_directa(M)
+        clasificacion_dir, med_mot_dir, med_dep_dir = clasificar_variables_directas(motricidad_dir, dependencia_dir)
         
-        # DEBUG: mostrar info
-        st.caption(f"Debug: balance_obj type={type(balance_obj)}, len={len(balance_obj) if hasattr(balance_obj, '__len__') else 'N/A'}")
-        if isinstance(balance_obj, pd.DataFrame):
-            st.caption(f"Debug: columns={list(balance_obj.columns)}")
+        df_directo = pd.DataFrame({
+            'Código': codigos,
+            'Variable': nombres,
+            'Motricidad': np.round(motricidad_dir, 2),
+            'Dependencia': np.round(dependencia_dir, 2),
+            'Clasificación': clasificacion_dir
+        })
+        df_directo['Ranking_M'] = df_directo['Motricidad'].rank(ascending=False).astype(int)
+        df_directo = df_directo.sort_values('Motricidad', ascending=False)
         
-        # Guardar si es válido
-        if isinstance(balance_obj, pd.DataFrame) and len(balance_obj) > 0:
-            st.session_state.mactor_resultados['balance_objetivos'] = balance_obj
-        if isinstance(impl_actores, pd.DataFrame) and len(impl_actores) > 0:
-            st.session_state.mactor_resultados['implicacion_actores'] = impl_actores
-        
-        # 3MAO
-        if 'MIDI' in resultados:
-            MAO_3 = calcular_3MAO(MAO_2, resultados['MIDI'])
-            if MAO_3 is not None:
-                st.session_state.mactor_resultados['MAO_3'] = MAO_3
+        st.session_state.resultados_directo = {
+            'df_resultados': df_directo,
+            'motricidad': motricidad_dir,
+            'dependencia': dependencia_dir,
+            'clasificacion': clasificacion_dir,
+            'med_mot': med_mot_dir,
+            'med_dep': med_dep_dir
+        }
         
         # Métricas
-        st.subheader("📈 Resumen")
-        col1, col2, col3 = st.columns(3)
+        st.subheader("📈 Distribución de Variables (Análisis DIRECTO)")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total", n)
+        col2.metric("🔴 Motrices", sum(c == 'Motrices' for c in clasificacion_dir))
+        col3.metric("🔵 Enlace", sum(c == 'Enlace' for c in clasificacion_dir))
+        col4.metric("💧 Resultado", sum(c == 'Resultado' for c in clasificacion_dir))
+        col5.metric("🟠 Autónomas", sum(c == 'Autónomas' for c in clasificacion_dir))
         
-        if isinstance(balance_obj, pd.DataFrame) and len(balance_obj) > 0 and 'Balance_ponderado' in balance_obj.columns:
-            try:
-                col1.metric("✅ Más viable", balance_obj.loc[balance_obj['Balance_ponderado'].idxmax(), 'Objetivo'])
-                col2.metric("❌ Más bloqueado", balance_obj.loc[balance_obj['Balance_ponderado'].idxmin(), 'Objetivo'])
-                col3.metric("⚡ Más movilizador", balance_obj.loc[balance_obj['Movilizacion'].idxmax(), 'Objetivo'])
-            except:
-                col1.metric("✅ Más viable", "Error")
-                col2.metric("❌ Más bloqueado", "Error")
-                col3.metric("⚡ Más movilizador", "Error")
+        # Ranking DIRECTO
+        st.subheader("🏆 Ranking de Variables (DIRECTO)")
+        
+        def color_clasif_dir(val):
+            colors = {
+                'Motrices': 'background-color: #ffcccc',
+                'Enlace': 'background-color: #cce5ff',
+                'Resultado': 'background-color: #cceeff',
+                'Autónomas': 'background-color: #fff3cd'
+            }
+            return colors.get(val, '')
+        
+        st.dataframe(
+            df_directo.style.map(color_clasif_dir, subset=['Clasificación']),
+            use_container_width=True, height=400
+        )
+        
+        # Gráfico de subsistemas DIRECTO - Versión HD
+        st.subheader("🗺️ Plano de Subsistemas (DIRECTO)")
+        
+        fig_dir = crear_grafico_subsistemas(
+            df_directo, med_mot_dir, med_dep_dir, motricidad_dir, dependencia_dir,
+            titulo="Análisis DIRECTO",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+            tamaño_fuente=tamaño_fuente, M_original=M
+        )
+        mostrar_grafico_con_descargas(fig_dir, "subsistemas_directo", "tab2")
+        
+        # Distribución
+        st.subheader("📊 Distribución por Cuadrantes (DIRECTO)")
+        fig_pie_dir = crear_grafico_distribucion_cuadrantes(clasificacion_dir, "Distribución DIRECTA")
+        mostrar_grafico_con_descargas(fig_pie_dir, "distribucion_directo", "tab2_pie")
+        
+        # Exportar CSV directo
+        st.subheader("📥 Exportar Análisis DIRECTO")
+        csv_directo = df_directo.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Ranking DIRECTO (CSV)",
+            csv_directo,
+            "ranking_DIRECTO.csv",
+            "text/csv",
+            key="csv_directo"
+        )
+        
+    else:
+        st.warning("⚠️ Primero carga una matriz en 'Datos'")
+
+# ============================================================
+# TAB 3: ANÁLISIS INDIRECTO
+# ============================================================
+with tab3:
+    st.header("📈 Análisis INDIRECTO (MIDI)")
+    
+    st.markdown("""
+    <div class="info-box">
+    <b>Análisis INDIRECTO:</b> Usa la matriz potenciada MIDI = M + αM² + α²M³ + ...<br>
+    • Revela <b>relaciones ocultas</b> y <b>estructurales</b> del sistema<br>
+    • Valores en <b>escala amplificada</b> (pueden ser millones)<br>
+    • Muestra cómo las influencias se <b>propagan</b> a través del sistema
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.session_state.matriz_procesada is not None:
+        M = st.session_state.M_original
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        n = M.shape[0]
+        
+        if K_auto:
+            K_usado = detectar_convergencia(M)
+            st.success(f"🔍 K óptimo detectado: **{K_usado}**")
         else:
-            col1.metric("✅ Más viable", "N/A")
-            col2.metric("❌ Más bloqueado", "N/A")
-            col3.metric("⚡ Más movilizador", "N/A")
+            K_usado = K_manual
         
-        # Gráficos
-        st.subheader("📊 Balance Ponderado")
-        fig_bal = crear_grafico_balance_objetivos(balance_obj)
-        mostrar_grafico_con_descargas(fig_bal, "balance_obj", "t3_1")
+        # Calcular MIDI
+        MIDI = calcular_midi(M, alpha=alpha, K=K_usado)
+        motricidad_ind, dependencia_ind = calcular_motricidad_dependencia(MIDI)
+        clasificacion_ind, med_mot_ind, med_dep_ind = clasificar_variables(motricidad_ind, dependencia_ind)
         
-        st.subheader("📊 Viabilidad")
-        mostrar_grafico_con_descargas(crear_grafico_viabilidad_objetivos(balance_obj), "viabilidad", "t3_2")
+        df_indirecto = pd.DataFrame({
+            'Código': codigos,
+            'Variable': nombres,
+            'Motricidad': np.round(motricidad_ind, 2),
+            'Dependencia': np.round(dependencia_ind, 2),
+            'Clasificación': clasificacion_ind
+        })
+        df_indirecto['Ranking_M'] = df_indirecto['Motricidad'].rank(ascending=False).astype(int)
+        df_indirecto = df_indirecto.sort_values('Motricidad', ascending=False)
         
-        st.subheader("📊 Movilización")
-        mostrar_grafico_con_descargas(crear_grafico_movilizacion_objetivos(balance_obj), "movilizacion", "t3_3")
+        st.session_state.resultados_indirecto = {
+            'df_resultados': df_indirecto,
+            'MIDI': MIDI,
+            'motricidad': motricidad_ind,
+            'dependencia': dependencia_ind,
+            'clasificacion': clasificacion_ind,
+            'med_mot': med_mot_ind,
+            'med_dep': med_dep_ind,
+            'alpha': alpha,
+            'K': K_usado
+        }
         
-        st.subheader("📊 Implicación de Actores")
-        mostrar_grafico_con_descargas(crear_grafico_implicacion_actores(impl_actores), "implicacion", "t3_4")
+        # Métricas
+        st.subheader(f"📈 Distribución de Variables (INDIRECTO, α={alpha}, K={K_usado})")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total", n)
+        col2.metric("🔴 Determinantes", sum(c == 'Determinantes' for c in clasificacion_ind))
+        col3.metric("🔵 Clave", sum(c == 'Clave' for c in clasificacion_ind))
+        col4.metric("💧 Resultado", sum(c == 'Variables resultado' for c in clasificacion_ind))
+        col5.metric("🟠 Autónomas", sum(c == 'Autónomas' for c in clasificacion_ind))
         
-        st.subheader("🔥 Matriz 2MAO")
-        mostrar_grafico_con_descargas(crear_heatmap_matriz(MAO_2, "2MAO", 'RdYlGn', mostrar_valores, 0), "2mao", "t3_5")
+        # Ranking INDIRECTO
+        st.subheader("🏆 Ranking de Variables (INDIRECTO)")
         
-        if isinstance(balance_obj, pd.DataFrame) and len(balance_obj) > 0:
-            st.subheader("📋 Tabla")
-            st.dataframe(balance_obj)
+        def color_clasif_ind(val):
+            colors = {
+                'Determinantes': 'background-color: #ffcccc',
+                'Clave': 'background-color: #cce5ff',
+                'Variables resultado': 'background-color: #cceeff',
+                'Autónomas': 'background-color: #fff3cd'
+            }
+            return colors.get(val, '')
+        
+        st.dataframe(
+            df_indirecto.style.map(color_clasif_ind, subset=['Clasificación']),
+            use_container_width=True, height=400
+        )
+        
+        # Gráfico de subsistemas INDIRECTO - Versión HD
+        st.subheader("🗺️ Plano de Subsistemas (INDIRECTO)")
+        
+        fig_ind = crear_grafico_subsistemas(
+            df_indirecto, med_mot_ind, med_dep_ind, motricidad_ind, dependencia_ind,
+            titulo="Análisis INDIRECTO",
+            usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+            tamaño_fuente=tamaño_fuente, M_original=M
+        )
+        mostrar_grafico_con_descargas(fig_ind, "subsistemas_indirecto", "tab3")
+        
+        # Distribución
+        st.subheader("📊 Distribución por Cuadrantes (INDIRECTO)")
+        fig_pie_ind = crear_grafico_distribucion_cuadrantes(clasificacion_ind, "Distribución INDIRECTA")
+        mostrar_grafico_con_descargas(fig_pie_ind, "distribucion_indirecto", "tab3_pie")
+        
+        # Matriz MIDI
+        st.subheader("🔢 Matriz MIDI")
+        etiquetas = codigos if usar_codigos else [truncar_texto(n, 20) for n in nombres]
+        fig_midi = go.Figure(data=go.Heatmap(
+            z=MIDI, x=etiquetas, y=etiquetas, colorscale='Blues',
+            hovertemplate='%{x} → %{y}<br>Valor: %{z:.1f}<extra></extra>'
+        ))
+        fig_midi.update_layout(height=600, title=f"MIDI (α={alpha}, K={K_usado})")
+        mostrar_grafico_con_descargas(fig_midi, "matriz_midi", "tab3_midi")
+        
+        # Exportar
+        st.subheader("📥 Exportar Análisis INDIRECTO")
+        csv_indirecto = df_indirecto.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Ranking INDIRECTO (CSV)",
+            csv_indirecto,
+            "ranking_INDIRECTO.csv",
+            "text/csv",
+            key="csv_indirecto"
+        )
+        
     else:
-        st.warning("⚠️ Carga datos con matriz 2MAO")
+        st.warning("⚠️ Primero carga una matriz en 'Datos'")
 
-# TAB 4: CONVERGENCIAS
+# ============================================================
+# TAB 4: COMPARACIÓN DIRECTO vs INDIRECTO
+# ============================================================
 with tab4:
-    st.header("🤝 Convergencias y Divergencias")
+    st.header("🔄 Comparación: DIRECTO vs INDIRECTO")
     
-    data = st.session_state.mactor_data
+    st.markdown("""
+    <div class="info-box">
+    <b>¿Por qué comparar?</b><br>
+    • El análisis <b>DIRECTO</b> muestra relaciones <b>inmediatas y visibles</b><br>
+    • El análisis <b>INDIRECTO</b> revela relaciones <b>ocultas y estructurales</b><br>
+    • Las variables que <b>cambian de cuadrante</b> son especialmente interesantes
+    </div>
+    """, unsafe_allow_html=True)
     
-    if data and data.get('MAO_2') is not None:
-        MAO_2 = data['MAO_2']
-        actores = data['actores']
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
         
-        CAA, DAA, CAA_pond, DAA_pond = calcular_convergencias_divergencias(MAO_2)
-        st.session_state.mactor_resultados.update({'CAA': CAA, 'DAA': DAA, 'CAA_pond': CAA_pond, 'DAA_pond': DAA_pond})
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Conv. simple", int(CAA.values.sum()/2))
-        col2.metric("Div. simple", int(DAA.values.sum()/2))
-        col3.metric("Conv. pond.", f"{CAA_pond.values.sum()/2:.0f}")
-        col4.metric("Div. pond.", f"{DAA_pond.values.sum()/2:.0f}")
-        
-        st.subheader("Simple")
-        mostrar_grafico_con_descargas(crear_grafico_convergencias_actor(CAA, DAA, actores), "conv_simple", "t4_1")
-        
-        st.subheader("Ponderadas")
-        mostrar_grafico_con_descargas(crear_grafico_convergencias_ponderadas(CAA_pond, DAA_pond, actores), "conv_pond", "t4_2")
-        
-        st.subheader("Matriz Alianzas Simple")
-        mostrar_grafico_con_descargas(crear_matriz_alianzas_conflictos(CAA, DAA, False), "alianzas_s", "t4_3")
-        
-        st.subheader("Matriz Alianzas Ponderada")
-        mostrar_grafico_con_descargas(crear_matriz_alianzas_conflictos(CAA_pond, DAA_pond, True), "alianzas_p", "t4_4")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(crear_heatmap_matriz(CAA_pond, "Convergencias Pond.", 'Greens', mostrar_valores), use_container_width=True, key="hm_caa")
-        with col2:
-            st.plotly_chart(crear_heatmap_matriz(DAA_pond, "Divergencias Pond.", 'Reds', mostrar_valores), use_container_width=True, key="hm_daa")
-        
-        st.subheader("Ambivalencia")
-        mostrar_grafico_con_descargas(crear_heatmap_matriz(calcular_ambivalencia(CAA, DAA), "Ambivalencia", 'YlOrRd', mostrar_valores), "ambiv", "t4_5")
-    else:
-        st.warning("⚠️ Carga datos")
-
-# TAB 5: AVANZADO
-with tab5:
-    st.header("🔬 Análisis Avanzado")
-    
-    data = st.session_state.mactor_data
-    resultados = st.session_state.mactor_resultados
-    
-    if data and resultados:
-        if 'balance' in resultados and 'CAA' in resultados:
-            st.subheader("Red de Actores")
-            mostrar_grafico_con_descargas(crear_red_actores(resultados['balance'], resultados['CAA'], resultados['DAA']), "red", "t5_1")
-        
-        if 'balance' in resultados:
-            st.subheader("Radar")
-            mostrar_grafico_con_descargas(crear_grafico_radar_actores(resultados['balance'], top_n_radar), "radar", "t5_2")
-        
-        if 'MAO_3' in resultados and resultados['MAO_3'] is not None:
-            st.subheader("3MAO")
-            mostrar_grafico_con_descargas(crear_heatmap_matriz(resultados['MAO_3'], "3MAO", 'RdYlGn', mostrar_valores, 0), "3mao", "t5_3")
-        
-        if 'CAA_pond' in resultados:
-            st.subheader("Alianzas y Conflictos Clave")
-            balance_mat = resultados['CAA_pond'] - resultados['DAA_pond']
-            actores = data['actores']
-            
-            alianzas, conflictos = [], []
-            for i in range(len(actores)):
-                for j in range(i+1, len(actores)):
-                    v = balance_mat.iloc[i, j]
-                    if v > 2: alianzas.append((actores[i], actores[j], v))
-                    elif v < 0: conflictos.append((actores[i], actores[j], v))  # Cambiado de -1 a 0
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**🟢 Alianzas:**")
-                for a1, a2, v in sorted(alianzas, key=lambda x: -x[2])[:7]:
-                    st.markdown(f"- {a1} ↔ {a2}: **+{v:.1f}**")
-            with col2:
-                st.markdown("**🔴 Conflictos:**")
-                for a1, a2, v in sorted(conflictos, key=lambda x: x[2])[:7]:
-                    st.markdown(f"- {a1} ↔ {a2}: **{v:.1f}**")
-    else:
-        st.warning("⚠️ Ejecuta análisis previo")
-
-# TAB 6: SÍNTESIS
-with tab6:
-    st.header("📊 Síntesis")
-    
-    data = st.session_state.mactor_data
-    resultados = st.session_state.mactor_resultados
-    
-    if data and resultados:
+        # Comparación de distribuciones
+        st.subheader("📊 Comparación de Distribuciones")
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("👥 Actores Clave")
-            if 'balance' in resultados and 'Ri_neto' in resultados['balance'].columns:
-                bal = resultados['balance']
-                st.markdown("**Top 3 Dominantes:**")
-                for _, r in bal.nlargest(3, 'Ri_neto').iterrows():
-                    st.markdown(f"- **{r['Actor']}**: +{r['Ri_neto']:.0f}")
-                st.markdown("**Top 3 Dominados:**")
-                for _, r in bal.nsmallest(3, 'Ri_neto').iterrows():
-                    st.markdown(f"- **{r['Actor']}**: {r['Ri_neto']:.0f}")
+            st.markdown("**DIRECTO**")
+            st.write(f"- 🔴 Motrices: {sum(c == 'Motrices' for c in res_dir['clasificacion'])}")
+            st.write(f"- 🔵 Enlace: {sum(c == 'Enlace' for c in res_dir['clasificacion'])}")
+            st.write(f"- 💧 Resultado: {sum(c == 'Resultado' for c in res_dir['clasificacion'])}")
+            st.write(f"- 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_dir['clasificacion'])}")
         
         with col2:
-            st.subheader("🎯 Objetivos Clave")
-            if 'balance_objetivos' in resultados and isinstance(resultados['balance_objetivos'], pd.DataFrame):
-                bal_obj = resultados['balance_objetivos']
-                if 'Viabilidad' in bal_obj.columns:
-                    st.markdown("**Más viables:**")
-                    for _, r in bal_obj.nlargest(3, 'Viabilidad').iterrows():
-                        st.markdown(f"- **{r['Objetivo']}**: {r['Viabilidad']:+.2f}")
-                    st.markdown("**Bloqueados:**")
-                    for _, r in bal_obj.nsmallest(3, 'Viabilidad').iterrows():
-                        st.markdown(f"- **{r['Objetivo']}**: {r['Viabilidad']:+.2f}")
+            st.markdown("**INDIRECTO**")
+            st.write(f"- 🔴 Determinantes: {sum(c == 'Determinantes' for c in res_ind['clasificacion'])}")
+            st.write(f"- 🔵 Clave: {sum(c == 'Clave' for c in res_ind['clasificacion'])}")
+            st.write(f"- 💧 Resultado: {sum(c == 'Variables resultado' for c in res_ind['clasificacion'])}")
+            st.write(f"- 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_ind['clasificacion'])}")
         
-        st.subheader("💡 Recomendaciones")
+        # Tabla de comparación
+        st.subheader("📋 Tabla Comparativa")
+        df_comp = comparar_directo_indirecto(res_dir['df_resultados'], res_ind['df_resultados'])
+        
+        # Resaltar cambios
+        n_cambios = df_comp['Cambio'].sum()
+        if n_cambios > 0:
+            st.warning(f"⚠️ **{n_cambios} variables** cambiaron de cuadrante entre análisis directo e indirecto")
+        else:
+            st.success("✅ Todas las variables mantienen su clasificación en ambos análisis")
+        
+        def highlight_cambio(row):
+            if row['Cambio']:
+                return ['background-color: #ffe6e6'] * len(row)
+            return [''] * len(row)
+        
+        st.dataframe(
+            df_comp.style.apply(highlight_cambio, axis=1),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Variables que cambiaron
+        if n_cambios > 0:
+            st.subheader("🔄 Variables que Cambiaron de Cuadrante")
+            df_cambios = df_comp[df_comp['Cambio']]
+            for _, row in df_cambios.iterrows():
+                st.markdown(f"- **{row['Código']}** ({row['Variable'][:40]}...): {row['Clasif_Directa']} → {row['Clasif_Indirecta']}")
+        
+        # Gráficos lado a lado
+        st.subheader("📈 Planos de Subsistemas Comparados")
+        col1, col2 = st.columns(2)
+        
+        M = st.session_state.M_original
+        
+        with col1:
+            fig_dir = crear_grafico_subsistemas(
+                res_dir['df_resultados'], res_dir['med_mot'], res_dir['med_dep'],
+                res_dir['motricidad'], res_dir['dependencia'],
+                titulo="DIRECTO",
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+                tamaño_fuente=tamaño_fuente-2, M_original=M
+            )
+            fig_dir.update_layout(height=500, margin=dict(r=50))
+            st.plotly_chart(fig_dir, use_container_width=True, key="comp_dir")
+        
+        with col2:
+            fig_ind = crear_grafico_subsistemas(
+                res_ind['df_resultados'], res_ind['med_mot'], res_ind['med_dep'],
+                res_ind['motricidad'], res_ind['dependencia'],
+                titulo="INDIRECTO",
+                usar_codigos=usar_codigos, mostrar_etiquetas=mostrar_etiquetas, 
+                tamaño_fuente=tamaño_fuente-2, M_original=M
+            )
+            fig_ind.update_layout(height=500, margin=dict(r=50))
+            st.plotly_chart(fig_ind, use_container_width=True, key="comp_ind")
+        
+        # Exportar comparación
+        csv_comp = df_comp.to_csv(index=False)
+        st.download_button(
+            "📥 Descargar Comparación (CSV)",
+            csv_comp,
+            "comparacion_directo_indirecto.csv",
+            "text/csv",
+            key="csv_comp"
+        )
+        
+        st.divider()
+        
+        # === GRÁFICOS DE DESPLAZAMIENTO DE RANKING (estilo LIPSOR) ===
+        st.subheader("📊 Desplazamiento de Rankings (Directo → Indirecto)")
         st.markdown("""
         <div class="info-box">
-        <b>1.</b> Negociar primero con actores dominantes<br>
-        <b>2.</b> Usar actores enlace como mediadores<br>
-        <b>3.</b> Priorizar objetivos viables para coaliciones<br>
-        <b>4.</b> Reformular objetivos bloqueados
+        Estos gráficos muestran cómo cambia la posición de cada variable al pasar del análisis 
+        <b>directo</b> al <b>indirecto</b>. Las líneas <span style="color:green"><b>verdes</b></span> 
+        indican variables que <b>suben</b> en el ranking indirecto, las <span style="color:red"><b>rojas</b></span> 
+        indican que <b>bajan</b>.
         </div>
         """, unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ Ejecuta análisis")
-
-# TAB 7: EXPORTAR
-with tab7:
-    st.header("📥 Exportar Resultados")
-    
-    data = st.session_state.mactor_data
-    resultados = st.session_state.mactor_resultados
-    
-    if data and resultados:
-        nombre = st.text_input("Nombre proyecto", "Analisis_MACTOR")
-        
-        datos_exp = {**data, **resultados, 'k': k_midi}
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("📊 Excel Completo")
-            st.markdown("Contiene todas las matrices y tablas de datos.")
-            buffer_excel = generar_informe_excel(datos_exp, nombre)
+            st.markdown("**Ranking por MOTRICIDAD**")
+            fig_desp_mot = crear_grafico_desplazamiento_ranking(
+                res_dir['df_resultados'], 
+                res_ind['df_resultados'], 
+                tipo='Motricidad'
+            )
+            st.plotly_chart(fig_desp_mot, use_container_width=True, key="desp_mot")
+        
+        with col2:
+            st.markdown("**Ranking por DEPENDENCIA**")
+            fig_desp_dep = crear_grafico_desplazamiento_ranking(
+                res_dir['df_resultados'], 
+                res_ind['df_resultados'], 
+                tipo='Dependencia'
+            )
+            st.plotly_chart(fig_desp_dep, use_container_width=True, key="desp_dep")
+        
+    else:
+        st.warning("⚠️ Ejecuta primero los análisis DIRECTO e INDIRECTO")
+
+# ============================================================
+# TAB 5: EJE ESTRATÉGICO
+# ============================================================
+with tab5:
+    st.header("🎯 Eje Estratégico")
+    
+    if st.session_state.resultados_indirecto is not None:
+        res = st.session_state.resultados_indirecto
+        df_res = res['df_resultados'].copy()
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        
+        st.markdown("""
+        <div class="info-box">
+        <b>Eje Estratégico:</b> La diagonal donde Motricidad = Dependencia.<br>
+        Variables cerca de esta línea tienen <b>máximo valor estratégico</b>.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        df_res['Valor_Estrategico'] = df_res['Motricidad'] + df_res['Dependencia']
+        df_res['Distancia_Eje'] = np.abs(df_res['Motricidad'] - df_res['Dependencia'])
+        
+        etiquetas = df_res['Código'].tolist() if usar_codigos else df_res['Variable'].tolist()
+        hover_text = [f"<b>{c}</b><br>{v}" for c, v in zip(df_res['Código'], df_res['Variable'])]
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df_res['Dependencia'], y=df_res['Motricidad'],
+            mode='markers+text' if mostrar_etiquetas else 'markers',
+            text=etiquetas if mostrar_etiquetas else None,
+            textposition='top center',
+            textfont=dict(size=tamaño_fuente),
+            marker=dict(size=12, color=df_res['Valor_Estrategico'], colorscale='YlOrRd',
+                showscale=True, colorbar=dict(title="Valor<br>Estratégico")),
+            hovertemplate="%{customdata}<br>Mot: %{y:.1f}<br>Dep: %{x:.1f}<extra></extra>",
+            customdata=hover_text
+        ))
+        
+        max_val = max(max(res['motricidad']), max(res['dependencia'])) * 1.1
+        fig.add_trace(go.Scatter(
+            x=[0, max_val], y=[0, max_val],
+            mode='lines', name='Eje Estratégico',
+            line=dict(color='red', dash='dash', width=2)
+        ))
+        
+        fig.update_layout(title="Eje Estratégico (Análisis Indirecto)", height=600)
+        mostrar_grafico_con_descargas(fig, "eje_estrategico", "tab5")
+        
+        st.subheader("🏆 Top 10 Variables Estratégicas")
+        top10 = df_res.nlargest(10, 'Valor_Estrategico')[
+            ['Código', 'Variable', 'Motricidad', 'Dependencia', 'Valor_Estrategico', 'Clasificación']
+        ]
+        st.dataframe(top10, use_container_width=True)
+        
+    else:
+        st.warning("⚠️ Ejecuta primero el análisis")
+
+# ============================================================
+# TAB 6: ANÁLISIS AVANZADO
+# ============================================================
+with tab6:
+    st.header("🔬 Análisis Avanzado")
+    
+    if st.session_state.resultados_indirecto is not None and st.session_state.M_original is not None:
+        res = st.session_state.resultados_indirecto
+        M = st.session_state.M_original
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        
+        # === GRAFO DE INFLUENCIAS (estilo LIPSOR) ===
+        st.subheader("🕸️ Grafo de Influencias Potenciales Directas")
+        
+        # Calcular estadísticas de relaciones
+        n_val3 = (M == 3).sum()
+        n_val2 = (M == 2).sum()
+        n_val1 = (M == 1).sum()
+        
+        st.markdown(f"""
+        <div class="info-box">
+        <b>Tu matriz tiene:</b> 🔴 <b>{n_val3}</b> relaciones fuertes (3) | 🔵 <b>{n_val2}</b> moderadas (2) | ⚫ <b>{n_val1}</b> débiles (1)<br>
+        <i>Ajusta el slider para ver más o menos conexiones. Para ver azules, sube a más de {n_val3}.</i>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            top_n_grafo = st.slider(
+                "Nº de relaciones a mostrar", 
+                min_value=20, max_value=300, value=50, step=10,
+                help="Tu matriz tiene 151 relaciones fuertes (3), 191 moderadas (2) y 106 débiles (1). Sube a 200+ para ver los colores azul y gris."
+            )
+            mostrar_valores_grafo = st.checkbox("Mostrar valores en aristas", value=False)
+        
+        fig_grafo = crear_grafo_influencias(M, codigos, nombres, top_n=top_n_grafo, mostrar_valores=mostrar_valores_grafo)
+        st.plotly_chart(fig_grafo, use_container_width=True, key="grafo_inf")
+        
+        st.divider()
+        
+        st.subheader("🕸️ Red de Influencias Fuertes (Vista alternativa)")
+        umbral_red = st.slider("Umbral de intensidad", min_value=1, max_value=3, value=2, key="umbral_red")
+        fig_red = crear_grafico_red_influencias(M, nombres, codigos, umbral=umbral_red, usar_codigos=usar_codigos)
+        mostrar_grafico_con_descargas(fig_red, "red_influencias", "tab6_red")
+        
+        st.divider()
+        
+        st.subheader("📊 Comparativo Motricidad vs Dependencia")
+        fig_comp = crear_grafico_comparativo_barras(res['df_resultados'], top_n=15)
+        mostrar_grafico_con_descargas(fig_comp, "comparativo_mot_dep", "tab6_comp")
+        
+        st.divider()
+        
+        st.subheader("📈 Estabilidad del Ranking según K")
+        fig_estab = crear_grafico_estabilidad(M, nombres, codigos, alpha=res['alpha'], usar_codigos=usar_codigos)
+        mostrar_grafico_con_descargas(fig_estab, "estabilidad_ranking", "tab6_estab")
+        
+        st.divider()
+        
+        st.subheader("💪 Top Relaciones de Influencia")
+        fig_rel = crear_grafico_relaciones_fuertes(M, nombres, codigos, top_n=20, usar_codigos=usar_codigos)
+        mostrar_grafico_con_descargas(fig_rel, "relaciones_fuertes", "tab6_rel")
+        
+    else:
+        st.warning("⚠️ Ejecuta primero el análisis")
+
+# ============================================================
+# TAB 7: INFORME
+# ============================================================
+with tab7:
+    st.header("📑 Generación de Informe")
+    
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
+        nombres = st.session_state.nombres_variables
+        codigos = st.session_state.codigos_variables
+        M = st.session_state.M_original
+        
+        nombre_proyecto = st.text_input("Nombre del proyecto", value="Analisis_MICMAC")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Informe Excel Completo")
+            st.markdown("""
+            **Incluye:**
+            - Resumen ejecutivo
+            - Ranking DIRECTO (valores originales)
+            - Ranking INDIRECTO (valores MIDI)
+            - Comparación Directo vs Indirecto
+            - Variables por cuadrante (ambos análisis)
+            - Matriz MID Original
+            - Matriz MIDI
+            - Relaciones fuertes
+            - Diccionario de códigos
+            """)
+            
+            buffer = generar_informe_excel(res_dir, res_ind, nombres, codigos, M, nombre_proyecto)
             st.download_button(
-                "📥 Descargar Excel", 
-                buffer_excel, 
-                f"{nombre}_MACTOR.xlsx", 
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                label="📥 Descargar Informe Excel Completo",
+                data=buffer,
+                file_name=f"{nombre_proyecto}_informe_completo.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary"
             )
         
         with col2:
-            st.subheader("📄 Informe PDF")
-            st.markdown("Informe ejecutivo con análisis y recomendaciones.")
+            st.subheader("📋 Resumen del Análisis")
+            st.markdown(f"""
+            **Proyecto:** {nombre_proyecto}
             
-            try:
-                pdf_buffer = generar_informe_pdf(datos_exp, nombre)
-                st.download_button(
-                    "📥 Descargar Informe PDF",
-                    pdf_buffer,
-                    f"{nombre}_Informe_MACTOR.pdf",
-                    "application/pdf",
-                    type="secondary"
-                )
-            except Exception as e:
-                st.error(f"Error generando PDF: {e}")
+            **Parámetros:**
+            - Variables: {len(nombres)}
+            - Alpha (α): {res_ind['alpha']}
+            - K: {res_ind['K']}
+            
+            **DIRECTO:**
+            - 🔴 Motrices: {sum(c == 'Motrices' for c in res_dir['clasificacion'])}
+            - 🔵 Enlace: {sum(c == 'Enlace' for c in res_dir['clasificacion'])}
+            - 💧 Resultado: {sum(c == 'Resultado' for c in res_dir['clasificacion'])}
+            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_dir['clasificacion'])}
+            
+            **INDIRECTO:**
+            - 🔴 Determinantes: {sum(c == 'Determinantes' for c in res_ind['clasificacion'])}
+            - 🔵 Clave: {sum(c == 'Clave' for c in res_ind['clasificacion'])}
+            - 💧 Resultado: {sum(c == 'Variables resultado' for c in res_ind['clasificacion'])}
+            - 🟠 Autónomas: {sum(c == 'Autónomas' for c in res_ind['clasificacion'])}
+            """)
         
-        st.divider()
-        st.subheader("📋 CSVs individuales")
-        col1, col2, col3, col4 = st.columns(4)
+    else:
+        st.warning("⚠️ Ejecuta primero ambos análisis")
+
+# ============================================================
+# TAB 8: EXPORTAR
+# ============================================================
+with tab8:
+    st.header("📥 Exportar Resultados Individuales")
+    
+    if st.session_state.resultados_directo is not None and st.session_state.resultados_indirecto is not None:
+        res_dir = st.session_state.resultados_directo
+        res_ind = st.session_state.resultados_indirecto
+        codigos = st.session_state.codigos_variables
+        nombres = st.session_state.nombres_variables
+        M = st.session_state.M_original
+        
+        st.subheader("📋 Exportaciones CSV")
+        
+        col1, col2 = st.columns(2)
         
         with col1:
-            if 'balance' in resultados and isinstance(resultados['balance'], pd.DataFrame):
-                st.download_button("Balance Actores", resultados['balance'].to_csv(index=False), "balance_actores.csv", "text/csv", key="csv_ba")
+            st.markdown("**Análisis DIRECTO:**")
+            csv_dir = res_dir['df_resultados'].to_csv(index=False)
+            st.download_button("📥 Ranking DIRECTO (CSV)", csv_dir, "ranking_DIRECTO.csv", "text/csv", key="exp_dir")
         
         with col2:
-            if 'balance_objetivos' in resultados and isinstance(resultados['balance_objetivos'], pd.DataFrame):
-                st.download_button("Balance Objetivos", resultados['balance_objetivos'].to_csv(index=False), "balance_objetivos.csv", "text/csv", key="csv_bo")
+            st.markdown("**Análisis INDIRECTO:**")
+            csv_ind = res_ind['df_resultados'].to_csv(index=False)
+            st.download_button("📥 Ranking INDIRECTO (CSV)", csv_ind, "ranking_INDIRECTO.csv", "text/csv", key="exp_ind")
+        
+        st.divider()
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**Matriz MID Original:**")
+            df_mid = pd.DataFrame(M, index=codigos, columns=codigos)
+            csv_mid = df_mid.to_csv()
+            st.download_button("📥 Matriz MID (CSV)", csv_mid, "matriz_MID.csv", "text/csv", key="exp_mid")
+        
+        with col2:
+            st.markdown("**Matriz MIDI:**")
+            df_midi = pd.DataFrame(res_ind['MIDI'], index=codigos, columns=codigos)
+            csv_midi = df_midi.to_csv()
+            st.download_button("📥 Matriz MIDI (CSV)", csv_midi, "matriz_MIDI.csv", "text/csv", key="exp_midi")
         
         with col3:
-            if 'CAA_pond' in resultados:
-                st.download_button("Convergencias", resultados['CAA_pond'].to_csv(), "convergencias.csv", "text/csv", key="csv_caa")
+            st.markdown("**Diccionario:**")
+            df_dict = pd.DataFrame({'Código': codigos, 'Variable': nombres})
+            csv_dict = df_dict.to_csv(index=False)
+            st.download_button("📥 Diccionario (CSV)", csv_dict, "diccionario.csv", "text/csv", key="exp_dict")
         
-        with col4:
-            if 'DAA_pond' in resultados:
-                st.download_button("Divergencias", resultados['DAA_pond'].to_csv(), "divergencias.csv", "text/csv", key="csv_daa")
-    
+        st.divider()
+        
+        st.markdown("**Comparación Directo vs Indirecto:**")
+        df_comp = comparar_directo_indirecto(res_dir['df_resultados'], res_ind['df_resultados'])
+        csv_comp = df_comp.to_csv(index=False)
+        st.download_button("📥 Comparación Dir-Ind (CSV)", csv_comp, "comparacion_dir_ind.csv", "text/csv", key="exp_comp")
+        
     else:
-        st.warning("⚠️ Procesa datos primero")
+        st.warning("⚠️ Ejecuta primero los análisis")
 
 # Footer
 st.divider()
-st.markdown('<div style="text-align:center;color:#666;"><b>MACTOR PRO v4.1</b> | Michel Godet (LIPSOR) | JETLEX | 2025</div>', unsafe_allow_html=True)
+st.markdown("""
+<div style="text-align: center; color: #666;">
+<b>MICMAC PRO v5.5</b> | Metodología Godet (umbral = Media Aritmética) | JETLEX Strategic Consulting | 2025
+</div>
+""", unsafe_allow_html=True)

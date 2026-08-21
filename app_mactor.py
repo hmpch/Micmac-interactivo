@@ -327,21 +327,40 @@ def calcular_balance_objetivos(MAO, balance_actores=None):
         if hasattr(MAO, 'values'):
             M = MAO.values.copy()
             objetivos = [str(c) for c in MAO.columns.tolist()]
+            actores_mao = MAO.index.tolist()
         else:
             M = np.array(MAO).copy()
             objetivos = [f"O{i+1}" for i in range(M.shape[1])]
+            actores_mao = [f"A{i+1}" for i in range(M.shape[0])]
         
-        # Coeficiente de poder
+        n_actores = M.shape[0]
+        
+        # Coeficiente de poder - con verificación de dimensiones
+        coef_poder = np.ones(n_actores)
+        
         if (balance_actores is not None and 
             isinstance(balance_actores, pd.DataFrame) and 
             'Ri_neto' in balance_actores.columns):
-            Ri_neto = balance_actores['Ri_neto'].values
-            if Ri_neto.max() != Ri_neto.min():
-                coef_poder = 0.5 + (Ri_neto - Ri_neto.min()) / (Ri_neto.max() - Ri_neto.min())
+            
+            # Intentar alinear por índice/nombre de actor
+            if hasattr(balance_actores, 'index'):
+                actores_balance = balance_actores.index.tolist()
+                
+                # Crear coeficiente alineado
+                for i, actor in enumerate(actores_mao):
+                    if actor in actores_balance:
+                        idx = actores_balance.index(actor)
+                        Ri = balance_actores.iloc[idx]['Ri_neto']
+                        # Normalizar
+                        Ri_all = balance_actores['Ri_neto'].values
+                        if Ri_all.max() != Ri_all.min():
+                            coef_poder[i] = 0.5 + (Ri - Ri_all.min()) / (Ri_all.max() - Ri_all.min())
             else:
-                coef_poder = np.ones(M.shape[0])
-        else:
-            coef_poder = np.ones(M.shape[0])
+                # Si las dimensiones coinciden, usar directamente
+                if len(balance_actores) == n_actores:
+                    Ri_neto = balance_actores['Ri_neto'].values
+                    if Ri_neto.max() != Ri_neto.min():
+                        coef_poder = 0.5 + (Ri_neto - Ri_neto.min()) / (Ri_neto.max() - Ri_neto.min())
         
         # Calcular para cada objetivo
         resultados = []
@@ -352,7 +371,7 @@ def calcular_balance_objetivos(MAO, balance_actores=None):
             n_neutro = int((pos == 0).sum())
             suma_favor = float(np.where(pos > 0, pos, 0).sum())
             suma_contra = float(np.where(pos < 0, pos, 0).sum())
-            balance_pond = float(np.sum(pos * coef_poder[:len(pos)]))
+            balance_pond = float(np.sum(pos * coef_poder))
             movilizacion = float(np.abs(pos).sum())
             viabilidad = balance_pond / movilizacion if movilizacion > 0 else 0.0
             
@@ -1254,11 +1273,6 @@ with tab3:
         balance_actores = resultados.get('balance')
         balance_obj = calcular_balance_objetivos(MAO_2, balance_actores)
         impl_actores = calcular_implicacion_actores(MAO_2)
-        
-        # DEBUG: mostrar info
-        st.caption(f"Debug: balance_obj type={type(balance_obj)}, len={len(balance_obj) if hasattr(balance_obj, '__len__') else 'N/A'}")
-        if isinstance(balance_obj, pd.DataFrame):
-            st.caption(f"Debug: columns={list(balance_obj.columns)}")
         
         # Guardar si es válido
         if isinstance(balance_obj, pd.DataFrame) and len(balance_obj) > 0:

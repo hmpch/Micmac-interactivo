@@ -1079,65 +1079,100 @@ with tab1:
     st.header("📋 Carga de Datos")
     
     if modo == "📁 Cargar archivo Excel":
-        # Procesar archivos
-        resultado = None
+        # Inicializar session_state para archivos
+        if 'maa_resultado' not in st.session_state:
+            st.session_state.maa_resultado = None
+        if 'mao_resultado' not in st.session_state:
+            st.session_state.mao_resultado = None
         
+        # Procesar archivo MAA si se sube
         if uploaded_file:
-            resultado = procesar_archivo_mactor(uploaded_file)
-            
-            # Si hay un segundo archivo (MAO), procesarlo y combinar
-            if uploaded_file_mao:
-                resultado_mao = procesar_archivo_mactor(uploaded_file_mao)
-                if resultado_mao.get('MAO_2') is not None:
-                    resultado['MAO_2'] = resultado_mao['MAO_2']
-                    resultado['objetivos'] = resultado_mao['objetivos']
-                    resultado['mensajes'].extend(resultado_mao.get('mensajes') or [])
-                elif resultado_mao.get('MAA') is not None:
-                    # El segundo archivo es MAA, el primero debe ser MAO
-                    resultado['MAO_2'] = resultado.get('MAA')
-                    resultado['objetivos'] = resultado.get('actores')
-                    resultado['MAA'] = resultado_mao['MAA']
-                    resultado['actores'] = resultado_mao['actores']
-                    resultado['mensajes'].extend(resultado_mao.get('mensajes') or [])
+            resultado_temp = procesar_archivo_mactor(uploaded_file)
+            # Determinar si es MAA o MAO
+            if resultado_temp.get('MAA') is not None:
+                st.session_state.maa_resultado = resultado_temp
+            elif resultado_temp.get('MAO_2') is not None:
+                # El archivo subido como MAA es en realidad MAO
+                st.session_state.mao_resultado = resultado_temp
         
-        if resultado:
-            if 'error' in resultado:
-                st.error(f"❌ {resultado['error']}")
-            else:
-                st.session_state.mactor_data = resultado
-                
-                # Mostrar mensajes
-                for msg in resultado.get('mensajes') or []: 
-                    if msg.startswith('✅'):
-                        st.success(msg)
-                    elif msg.startswith('📋'):
-                        st.info(msg)
-                    else:
-                        st.write(msg)
-                
-                # Métricas
-                col1, col2, col3 = st.columns(3)
-                n_actores = len(resultado.get('actores') or [])
-                n_objetivos = len(resultado.get('objetivos') or [])
-                col1.metric("👥 Actores", n_actores)
-                col2.metric("🎯 Objetivos", n_objetivos)
-                col3.metric("📑 Hojas", len(resultado.get('hojas') or []))
-                
-                # Advertencias si falta algo
-                if resultado.get('MAA') is None:
-                    st.warning("⚠️ No se detectó matriz MAA (Actores × Actores). Sube el archivo correspondiente.")
-                if resultado.get('MAO_2') is None:
-                    st.warning("⚠️ No se detectó matriz MAO (Actores × Objetivos). Sube el archivo correspondiente.")
-                
-                # Mostrar matrices
-                if resultado.get('MAA') is not None:
-                    st.subheader("Matriz MAA (Actores × Actores)")
-                    st.dataframe(resultado['MAA'], height=300)
-                if resultado.get('MAO_2') is not None:
-                    st.subheader("Matriz MAO (Actores × Objetivos)")
-                    st.dataframe(resultado['MAO_2'], height=300)
+        # Procesar archivo MAO si se sube (solo en modo dos archivos)
+        if uploaded_file_mao:
+            resultado_temp = procesar_archivo_mactor(uploaded_file_mao)
+            # Determinar si es MAA o MAO
+            if resultado_temp.get('MAO_2') is not None:
+                st.session_state.mao_resultado = resultado_temp
+            elif resultado_temp.get('MAA') is not None:
+                # El archivo subido como MAO es en realidad MAA
+                st.session_state.maa_resultado = resultado_temp
+        
+        # Combinar resultados
+        resultado = {
+            'hojas': [],
+            'MAA': None,
+            'MAO_2': None,
+            'actores': None,
+            'objetivos': None,
+            'mensajes': []
+        }
+        
+        if st.session_state.maa_resultado:
+            resultado['MAA'] = st.session_state.maa_resultado.get('MAA')
+            resultado['actores'] = st.session_state.maa_resultado.get('actores')
+            resultado['hojas'].extend(st.session_state.maa_resultado.get('hojas') or [])
+            resultado['mensajes'].extend(st.session_state.maa_resultado.get('mensajes') or [])
+        
+        if st.session_state.mao_resultado:
+            resultado['MAO_2'] = st.session_state.mao_resultado.get('MAO_2')
+            resultado['objetivos'] = st.session_state.mao_resultado.get('objetivos')
+            # Si no tenemos actores de MAA, usar los de MAO
+            if resultado['actores'] is None:
+                resultado['actores'] = st.session_state.mao_resultado.get('actores')
+            resultado['hojas'].extend(st.session_state.mao_resultado.get('hojas') or [])
+            resultado['mensajes'].extend(st.session_state.mao_resultado.get('mensajes') or [])
+        
+        # Mostrar estado
+        if resultado['MAA'] is not None or resultado['MAO_2'] is not None:
+            st.session_state.mactor_data = resultado
+            
+            # Mostrar mensajes
+            for msg in resultado.get('mensajes') or []: 
+                if msg.startswith('✅'):
+                    st.success(msg)
+                elif msg.startswith('📋'):
+                    st.info(msg)
+                else:
+                    st.write(msg)
+            
+            # Métricas
+            col1, col2, col3 = st.columns(3)
+            n_actores = len(resultado.get('actores') or [])
+            n_objetivos = len(resultado.get('objetivos') or [])
+            col1.metric("👥 Actores", n_actores)
+            col2.metric("🎯 Objetivos", n_objetivos)
+            col3.metric("📑 Hojas", len(resultado.get('hojas') or []))
+            
+            # Advertencias si falta algo
+            if resultado.get('MAA') is None:
+                st.warning("⚠️ No se detectó matriz MAA (Actores × Actores). Sube el archivo correspondiente en '📊 Matriz de Actores'.")
+            if resultado.get('MAO_2') is None:
+                st.warning("⚠️ No se detectó matriz MAO (Actores × Objetivos). Sube el archivo correspondiente en '🎯 Matriz de Objetivos'.")
+            
+            # Mostrar matrices
+            if resultado.get('MAA') is not None:
+                st.subheader("Matriz MAA (Actores × Actores)")
+                st.dataframe(resultado['MAA'], height=300)
+            if resultado.get('MAO_2') is not None:
+                st.subheader("Matriz MAO (Actores × Objetivos)")
+                st.dataframe(resultado['MAO_2'], height=300)
+            
+            # Botón para limpiar
+            if st.button("🗑️ Limpiar archivos cargados"):
+                st.session_state.maa_resultado = None
+                st.session_state.mao_resultado = None
+                st.session_state.mactor_data = None
+                st.rerun()
         else:
-            st.info("👆 Sube un archivo Excel con matrices MAA y MAO, o usa dos archivos separados")
+            st.info("👆 Sube los archivos Excel con las matrices MAA y MAO")
     else:
         if st.session_state.actores_manual:
             st.subheader("Editar Actores")

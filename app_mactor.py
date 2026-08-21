@@ -1041,7 +1041,19 @@ with st.sidebar:
     st.divider()
     
     if modo == "📁 Cargar archivo Excel":
-        uploaded_file = st.file_uploader("Subir archivo MACTOR", type=['xlsx', 'xls'])
+        st.subheader("📂 Cargar Matrices")
+        tipo_archivo = st.radio(
+            "Tipo de archivo:",
+            ["📄 Un archivo (MAA + MAO)", "📑 Dos archivos separados"],
+            help="Si tus matrices están en archivos separados, selecciona la segunda opción"
+        )
+        
+        if tipo_archivo == "📄 Un archivo (MAA + MAO)":
+            uploaded_file = st.file_uploader("Archivo MACTOR", type=['xlsx', 'xls'], key="single")
+            uploaded_file_mao = None
+        else:
+            uploaded_file = st.file_uploader("📊 Matriz de Actores (MAA)", type=['xlsx', 'xls'], key="maa")
+            uploaded_file_mao = st.file_uploader("🎯 Matriz de Objetivos (MAO)", type=['xlsx', 'xls'], key="mao")
     else:
         n_actores = st.number_input("Nº actores", 2, 20, 5)
         n_objetivos = st.number_input("Nº objetivos", 2, 40, 10)
@@ -1052,6 +1064,7 @@ with st.sidebar:
             st.session_state.MAO_manual = pd.DataFrame(np.zeros((n_actores, n_objetivos)), index=st.session_state.actores_manual, columns=st.session_state.objetivos_manual)
             st.success("✅ Plantillas creadas")
         uploaded_file = None
+        uploaded_file_mao = None
     
     st.divider()
     k_midi = st.slider("K (MIDI)", 2, 5, 2)
@@ -1066,27 +1079,65 @@ with tab1:
     st.header("📋 Carga de Datos")
     
     if modo == "📁 Cargar archivo Excel":
+        # Procesar archivos
+        resultado = None
+        
         if uploaded_file:
             resultado = procesar_archivo_mactor(uploaded_file)
+            
+            # Si hay un segundo archivo (MAO), procesarlo y combinar
+            if uploaded_file_mao:
+                resultado_mao = procesar_archivo_mactor(uploaded_file_mao)
+                if resultado_mao.get('MAO_2') is not None:
+                    resultado['MAO_2'] = resultado_mao['MAO_2']
+                    resultado['objetivos'] = resultado_mao['objetivos']
+                    resultado['mensajes'].extend(resultado_mao.get('mensajes') or [])
+                elif resultado_mao.get('MAA') is not None:
+                    # El segundo archivo es MAA, el primero debe ser MAO
+                    resultado['MAO_2'] = resultado.get('MAA')
+                    resultado['objetivos'] = resultado.get('actores')
+                    resultado['MAA'] = resultado_mao['MAA']
+                    resultado['actores'] = resultado_mao['actores']
+                    resultado['mensajes'].extend(resultado_mao.get('mensajes') or [])
+        
+        if resultado:
             if 'error' in resultado:
                 st.error(f"❌ {resultado['error']}")
             else:
                 st.session_state.mactor_data = resultado
-                for msg in resultado.get('mensajes', []): st.success(msg)
                 
+                # Mostrar mensajes
+                for msg in resultado.get('mensajes') or []: 
+                    if msg.startswith('✅'):
+                        st.success(msg)
+                    elif msg.startswith('📋'):
+                        st.info(msg)
+                    else:
+                        st.write(msg)
+                
+                # Métricas
                 col1, col2, col3 = st.columns(3)
-                col1.metric("👥 Actores", len(resultado.get('actores', [])))
-                col2.metric("🎯 Objetivos", len(resultado.get('objetivos', [])))
-                col3.metric("📑 Hojas", len(resultado.get('hojas', [])))
+                n_actores = len(resultado.get('actores') or [])
+                n_objetivos = len(resultado.get('objetivos') or [])
+                col1.metric("👥 Actores", n_actores)
+                col2.metric("🎯 Objetivos", n_objetivos)
+                col3.metric("📑 Hojas", len(resultado.get('hojas') or []))
                 
+                # Advertencias si falta algo
+                if resultado.get('MAA') is None:
+                    st.warning("⚠️ No se detectó matriz MAA (Actores × Actores). Sube el archivo correspondiente.")
+                if resultado.get('MAO_2') is None:
+                    st.warning("⚠️ No se detectó matriz MAO (Actores × Objetivos). Sube el archivo correspondiente.")
+                
+                # Mostrar matrices
                 if resultado.get('MAA') is not None:
-                    st.subheader("Matriz MAA")
+                    st.subheader("Matriz MAA (Actores × Actores)")
                     st.dataframe(resultado['MAA'], height=300)
                 if resultado.get('MAO_2') is not None:
-                    st.subheader("Matriz 2MAO")
+                    st.subheader("Matriz MAO (Actores × Objetivos)")
                     st.dataframe(resultado['MAO_2'], height=300)
         else:
-            st.info("👆 Sube un archivo Excel con matrices MAA y 2MAO")
+            st.info("👆 Sube un archivo Excel con matrices MAA y MAO, o usa dos archivos separados")
     else:
         if st.session_state.actores_manual:
             st.subheader("Editar Actores")

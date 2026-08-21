@@ -1,9 +1,10 @@
 """
-MACTOR PRO v4.1 - Método de Análisis de Actores
+MACTOR PRO v4.2 - Método de Análisis de Actores
 Matriz de Alianzas y Conflictos: Tácticas, Objetivos y Recomendaciones
 
 Autor: JETLEX Strategic Consulting / Martín Pratto Chiarella
 Basado en el método de Michel Godet (LIPSOR)
+Versión 4.2: Detección automática de matrices MAA y MAO
 """
 
 import streamlit as st
@@ -36,7 +37,7 @@ st.markdown("""
 # ============================================================
 
 def procesar_archivo_mactor(uploaded_file):
-    """Procesa archivo Excel MACTOR"""
+    """Procesa archivo Excel MACTOR - Versión flexible con detección automática"""
     try:
         xl = pd.ExcelFile(uploaded_file)
         hojas = xl.sheet_names
@@ -46,36 +47,70 @@ def procesar_archivo_mactor(uploaded_file):
             'actores': None, 'objetivos': None, 'mensajes': []
         }
         
-        # Buscar MAA
+        # Buscar MAA - primero por nombre, luego por contenido
+        hoja_maa = None
         for hoja in hojas:
             if 'MAA' in hoja.upper() and 'JUST' not in hoja.upper():
-                df = pd.read_excel(xl, sheet_name=hoja, header=None)
-                fila_inicio = 0
-                for i in range(min(10, len(df))):
-                    val = str(df.iloc[i, 0]).lower() if pd.notna(df.iloc[i, 0]) else ""
-                    if 'de' in val and ('sobre' in val or '\\' in val):
+                hoja_maa = hoja
+                break
+        
+        # Si no encontró por nombre, buscar matriz cuadrada (actores x actores)
+        if hoja_maa is None:
+            for hoja in hojas:
+                df_temp = pd.read_excel(xl, sheet_name=hoja, header=None)
+                # Detectar si es matriz cuadrada (MAA)
+                # La primera fila y columna deben tener los mismos nombres
+                if df_temp.shape[0] > 5 and df_temp.shape[1] > 5:
+                    # Verificar si la fila 0 y columna 0 tienen nombres similares
+                    headers_row = [str(v).strip() for v in df_temp.iloc[0, 1:6] if pd.notna(v)]
+                    headers_col = [str(v).strip() for v in df_temp.iloc[1:6, 0] if pd.notna(v)]
+                    # Si hay coincidencia, es una MAA
+                    if len(headers_row) > 0 and len(headers_col) > 0:
+                        coincidencias = sum(1 for h in headers_row if h in headers_col)
+                        if coincidencias >= 2:
+                            hoja_maa = hoja
+                            resultado['mensajes'].append(f"📋 Detectada matriz de actores en '{hoja}'")
+                            break
+        
+        # Procesar MAA
+        if hoja_maa:
+            df = pd.read_excel(xl, sheet_name=hoja_maa, header=None)
+            
+            # Detectar fila de inicio
+            fila_inicio = 0
+            for i in range(min(10, len(df))):
+                val = str(df.iloc[i, 0]).lower() if pd.notna(df.iloc[i, 0]) else ""
+                if 'de' in val and ('sobre' in val or '\\' in val):
+                    fila_inicio = i + 1
+                    break
+                # También detectar si la primera celda está vacía y hay nombres en la fila
+                if pd.isna(df.iloc[i, 0]) and pd.notna(df.iloc[i, 1]):
+                    # Verificar si la siguiente fila tiene un nombre en columna 0
+                    if i + 1 < len(df) and pd.notna(df.iloc[i + 1, 0]):
                         fila_inicio = i + 1
                         break
-                if fila_inicio == 0:
-                    for i in range(min(10, len(df))):
-                        if pd.notna(df.iloc[i, 1]):
-                            try:
-                                float(df.iloc[i, 1])
-                                fila_inicio = i
-                                break
-                            except:
-                                pass
-                
-                actores, filas_datos = [], []
-                for i in range(fila_inicio, min(fila_inicio + 25, len(df))):
-                    nombre = df.iloc[i, 0]
-                    if pd.isna(nombre): continue
-                    nombre_str = str(nombre).strip()
-                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'ii', 'di']):
-                        actores.append(nombre_str)
-                        filas_datos.append(i)
-                
-                n = len(actores)
+            
+            if fila_inicio == 0:
+                for i in range(min(10, len(df))):
+                    if pd.notna(df.iloc[i, 1]):
+                        try:
+                            float(df.iloc[i, 1])
+                            fila_inicio = i
+                            break
+                        except:
+                            pass
+            
+            actores, filas_datos = [], []
+            for i in range(fila_inicio, min(fila_inicio + 30, len(df))):
+                nombre = df.iloc[i, 0]
+                if pd.isna(nombre): continue
+                nombre_str = str(nombre).strip()
+                if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'ii', 'di', 'influencia']):
+                    actores.append(nombre_str)
+                    filas_datos.append(i)
+            
+            n = len(actores)
+            if n > 0:
                 matriz = np.zeros((n, n))
                 for i, fila_idx in enumerate(filas_datos):
                     for j in range(n):
@@ -87,75 +122,120 @@ def procesar_archivo_mactor(uploaded_file):
                 np.fill_diagonal(matriz, 0)
                 resultado['MAA'] = pd.DataFrame(matriz, index=actores, columns=actores)
                 resultado['actores'] = actores
-                resultado['mensajes'].append(f"✅ MAA {n}×{n} procesada")
-                break
+                resultado['mensajes'].append(f"✅ MAA {n}×{n} procesada desde '{hoja_maa}'")
         
-        # Buscar 2MAO
+        # Buscar 2MAO - primero por nombre, luego por contenido
+        hoja_mao = None
         for hoja in hojas:
             if '2MAO' in hoja.upper() and 'JUST' not in hoja.upper():
-                df = pd.read_excel(xl, sheet_name=hoja, header=None)
-                
-                # Buscar fila de headers (donde están O1, O2, etc.)
-                fila_headers = None
-                for i in range(min(10, len(df))):
-                    # Verificar si la fila tiene O1, O2, etc. como headers
-                    row_vals = [str(v).strip().upper() if pd.notna(v) else '' for v in df.iloc[i, :10]]
-                    if 'O1' in row_vals or 'O2' in row_vals:
-                        fila_headers = i
-                        break
-                    # También buscar "Actor" al inicio de la celda (no en medio de un título)
-                    val0 = str(df.iloc[i, 0]).strip() if pd.notna(df.iloc[i, 0]) else ""
-                    if val0.lower().startswith('actor') or '\\' in val0:
-                        fila_headers = i
-                        break
-                
-                if fila_headers is None:
-                    fila_headers = 3  # Default para tu archivo
-                
-                # Extraer objetivos
-                objetivos = []
-                for j in range(1, min(40, len(df.columns))):
-                    val = df.iloc[fila_headers, j]
-                    if pd.notna(val):
-                        obj_str = str(val).strip().upper()
-                        # Debe ser O seguido de número (O1, O2, ... O30)
-                        if obj_str.startswith('O') and len(obj_str) <= 3:
-                            try:
-                                int(obj_str[1:])  # Verificar que después de O hay un número
-                                objetivos.append(obj_str)
-                            except:
-                                pass
-                
-                # Extraer actores y datos
-                actores_mao, filas_datos = [], []
-                for i in range(fila_headers + 1, min(fila_headers + 26, len(df))):
-                    nombre = df.iloc[i, 0]
-                    if pd.isna(nombre): continue
-                    nombre_str = str(nombre).strip()
-                    if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'moviliz', 'σ']):
-                        actores_mao.append(nombre_str)
-                        filas_datos.append(i)
-                
-                n_actores, n_objetivos = len(actores_mao), len(objetivos)
-                if n_objetivos > 0 and n_actores > 0:
-                    matriz = np.zeros((n_actores, n_objetivos))
-                    for i, fila_idx in enumerate(filas_datos):
-                        for j in range(n_objetivos):
-                            val = df.iloc[fila_idx, j + 1]
-                            if pd.notna(val):
-                                try: matriz[i, j] = float(val)
-                                except: pass
-                    
-                    resultado['MAO_2'] = pd.DataFrame(matriz, index=actores_mao, columns=objetivos)
-                    resultado['objetivos'] = objetivos
-                    if resultado['actores'] is None:
-                        resultado['actores'] = actores_mao
-                    resultado['mensajes'].append(f"✅ 2MAO {n_actores}×{n_objetivos} procesada")
+                hoja_mao = hoja
+                break
+            if 'MAO' in hoja.upper() and 'JUST' not in hoja.upper():
+                hoja_mao = hoja
+                break
+            if 'OBJETIVO' in hoja.upper():
+                hoja_mao = hoja
                 break
         
+        # Si no encontró por nombre, buscar matriz rectangular (actores x objetivos)
+        if hoja_mao is None:
+            for hoja in hojas:
+                if hoja == hoja_maa:  # No usar la misma hoja que MAA
+                    continue
+                df_temp = pd.read_excel(xl, sheet_name=hoja, header=None)
+                # Detectar si es matriz rectangular con objetivos
+                if df_temp.shape[0] > 3 and df_temp.shape[1] > 3:
+                    # Verificar si la primera fila tiene textos (objetivos) diferentes a la columna
+                    headers_row = [str(v).strip() for v in df_temp.iloc[0, 1:] if pd.notna(v)]
+                    headers_col = [str(v).strip() for v in df_temp.iloc[1:, 0] if pd.notna(v)]
+                    if len(headers_row) > 0 and len(headers_col) > 0:
+                        # Si no son iguales, probablemente es MAO
+                        coincidencias = sum(1 for h in headers_row if h in headers_col)
+                        if coincidencias < 2:  # Pocos nombres coinciden = es MAO
+                            hoja_mao = hoja
+                            resultado['mensajes'].append(f"📋 Detectada matriz de objetivos en '{hoja}'")
+                            break
+        
+        # Procesar 2MAO/MAO
+        if hoja_mao:
+            df = pd.read_excel(xl, sheet_name=hoja_mao, header=None)
+            
+            # Buscar fila de headers
+            fila_headers = 0
+            for i in range(min(10, len(df))):
+                row_vals = [str(v).strip().upper() if pd.notna(v) else '' for v in df.iloc[i, :10]]
+                if 'O1' in row_vals or 'O2' in row_vals:
+                    fila_headers = i
+                    break
+                val0 = str(df.iloc[i, 0]).strip() if pd.notna(df.iloc[i, 0]) else ""
+                if val0.lower().startswith('actor') or '\\' in val0:
+                    fila_headers = i
+                    break
+                # Si la primera celda está vacía pero hay contenido en la fila, es header
+                if pd.isna(df.iloc[i, 0]) and pd.notna(df.iloc[i, 1]):
+                    fila_headers = i
+                    break
+            
+            # Extraer objetivos de la fila de headers
+            objetivos = []
+            for j in range(1, min(40, len(df.columns))):
+                val = df.iloc[fila_headers, j]
+                if pd.notna(val):
+                    obj_str = str(val).strip()
+                    if obj_str:
+                        # Aceptar O1, O2, etc. o nombres largos de objetivos
+                        if obj_str.upper().startswith('O') and len(obj_str) <= 3:
+                            try:
+                                int(obj_str[1:])
+                                objetivos.append(obj_str.upper())
+                                continue
+                            except:
+                                pass
+                        # También aceptar nombres descriptivos de objetivos
+                        if len(obj_str) > 3:
+                            objetivos.append(obj_str[:20])  # Truncar nombres largos
+            
+            # Si no hay objetivos con formato O1, O2, usar nombres genéricos
+            if len(objetivos) == 0:
+                n_cols = 0
+                for j in range(1, min(40, len(df.columns))):
+                    if pd.notna(df.iloc[fila_headers, j]):
+                        n_cols += 1
+                objetivos = [f"O{i+1}" for i in range(n_cols)]
+            
+            # Extraer actores y datos
+            actores_mao, filas_datos = [], []
+            for i in range(fila_headers + 1, min(fila_headers + 30, len(df))):
+                nombre = df.iloc[i, 0]
+                if pd.isna(nombre): continue
+                nombre_str = str(nombre).strip()
+                if nombre_str and not any(x in nombre_str.lower() for x in ['suma', 'total', 'moviliz', 'σ']):
+                    actores_mao.append(nombre_str)
+                    filas_datos.append(i)
+            
+            n_actores, n_objetivos = len(actores_mao), len(objetivos)
+            if n_objetivos > 0 and n_actores > 0:
+                matriz = np.zeros((n_actores, n_objetivos))
+                for i, fila_idx in enumerate(filas_datos):
+                    for j in range(n_objetivos):
+                        val = df.iloc[fila_idx, j + 1]
+                        if pd.notna(val):
+                            try: matriz[i, j] = float(val)
+                            except: pass
+                
+                resultado['MAO_2'] = pd.DataFrame(matriz, index=actores_mao, columns=objetivos)
+                resultado['objetivos'] = objetivos
+                resultado['mensajes'].append(f"✅ MAO {n_actores}×{n_objetivos} procesada desde '{hoja_mao}'")
+                
+                # Si no teníamos actores de MAA, usar los de MAO
+                if resultado['actores'] is None:
+                    resultado['actores'] = actores_mao
+        
         return resultado
+        
     except Exception as e:
-        return {'error': str(e)}
+        return {'hojas': [], 'MAA': None, 'MAO_2': None, 'actores': [], 'objetivos': [], 
+                'mensajes': [f"❌ Error: {str(e)}"]}
 
 # ============================================================
 # FUNCIONES DE CÁLCULO MACTOR
